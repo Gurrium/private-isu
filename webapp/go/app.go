@@ -530,21 +530,125 @@ func getIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmap := template.FuncMap{
-		"imageURL": imageURL,
+	flash := getFlash(w, r, "notice")
+	csrfToken := getCSRFToken(r)
+
+	content := templateIndex(posts, csrfToken, flash)
+
+	w.Write([]byte(templateLayout(me, content)))
+}
+
+func templateLayout(me User, content string) string {
+	header := ""
+	if me.ID == 0 {
+		header = `<div><a href="/login">ログイン</a></div>`
+	} else {
+		header = fmt.Sprintf(`<div><a href="/@%s"><span class="isu-account-name">%s</span>さん</a></div>`, me.AccountName, me.AccountName)
+
+		if me.Authority == 1 {
+			header += `
+			<div><a href="/admin/banned">管理者用ページ</a></div>
+			`
+		}
+
+		header += `<div><a href="/logout">ログアウト</a></div>`
 	}
 
-	template.Must(template.New("layout.html").Funcs(fmap).ParseFiles(
-		getTemplPath("layout.html"),
-		getTemplPath("index.html"),
-		getTemplPath("posts.html"),
-		getTemplPath("post.html"),
-	)).Execute(w, struct {
-		Posts     []Post
-		Me        User
-		CSRFToken string
-		Flash     string
-	}{posts, me, getCSRFToken(r), getFlash(w, r, "notice")})
+	body := `<!DOCTYPE html> <html> <head> <meta charset="utf-8"> <title>Iscogram</title> <link href="/css/style.css" media="screen" rel="stylesheet" type="text/css"> </head> <body> <div class="container"> <div class="header"> <div class="isu-title"> <h1><a href="/">Iscogram</a></h1> </div> <div class="isu-header-menu">`
+	body += header
+	body += `</div> </div>`
+	body += content
+	body += `</div> <script src="/js/timeago.min.js"></script> <script src="/js/main.js"></script> </body> </html>`
+
+	return body
+}
+
+func templateIndex(posts []Post, csrfToken string, flash string) string {
+	body := fmt.Sprintf(
+		`<div class="isu-submit"> <form method="post" action="/" enctype="multipart/form-data"> <div class="isu-form"> <input type="file" name="file" value="file"> </div> <div class="isu-form"> <textarea name="body"></textarea> </div> <div class="form-submit"> 
+	<input type="hidden" name="csrf_token" value="%s"> <input type="submit" name="submit" value="submit"> </div>`,
+		csrfToken,
+	)
+	if len(flash) > 0 {
+		body += `<div id="notice-message" class="alert alert-danger">`
+		body += flash
+		body += `</div>`
+	}
+	body += `</form></div>`
+
+	body += templatePosts(posts)
+	body += `<div id="isu-post-more"><button id="isu-post-more-btn">もっと見る</button><img class="isu-loading-icon" src="/img/ajax-loader.gif"></div>`
+
+	return body
+}
+
+func templatePosts(posts []Post) string {
+	body := `<div class="isu-posts">`
+	for _, p := range posts {
+		body += templatePost(p)
+	}
+	body += `</div>`
+
+	return body
+}
+
+func templatePost(post Post) string {
+	body := fmt.Sprintf(`<div class="isu-post" id="pid_%d" data-created-at="%s}">
+  <div class="isu-post-header">
+    <a href="/@%s" class="isu-post-account-name">%s</a>
+    <a href="/posts/%d" class="isu-post-permalink">
+      <time class="timeago" datetime="%s"></time>
+    </a>
+  </div>
+  <div class="isu-post-image">
+    <img src="%s" class="isu-image">
+  </div>
+  <div class="isu-post-text">
+    <a href="/@%s" class="isu-post-account-name">%s</a>
+    %s
+  </div>
+  <div class="isu-post-comment">
+    <div class="isu-post-comment-count">
+      comments: <b>%d</b>
+    </div>
+	`,
+		post.ID,
+		post.CreatedAt.Format(ISO8601Format),
+		post.User.AccountName,
+		post.User.AccountName,
+		post.ID,
+		post.CreatedAt.Format(ISO8601Format),
+		imageURL(post),
+		post.User.AccountName,
+		post.User.AccountName,
+		post.Body,
+		post.CommentCount,
+	)
+
+	for _, c := range post.Comments {
+		body += fmt.Sprintf(`
+			<div class="isu-comment">
+			<a href="/@%s" class="isu-comment-account-name">%s</a>
+			<span class="isu-comment-text">%s</span>
+			</div>
+			`,
+			c.User.AccountName,
+			c.User.AccountName,
+			c.Comment,
+		)
+	}
+
+	body += fmt.Sprintf(
+		`<div class="isu-comment-form"> <form method="post" action="/comment"> <input type="text" name="comment">
+		<input type="hidden" name="post_id" value="%d}">
+		<input type="hidden" name="csrf_token" value="%s">
+		<input type="submit" name="submit" value="submit"> </form> </div> </div> </div>
+		`,
+		post.ID,
+		post.CSRFToken,
+	)
+
+	return body
 }
 
 func getAccountName(w http.ResponseWriter, r *http.Request) {
@@ -981,14 +1085,49 @@ func getAdminBanned(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	template.Must(template.ParseFiles(
-		getTemplPath("layout.html"),
-		getTemplPath("banned.html")),
-	).Execute(w, struct {
-		Users     []User
-		Me        User
-		CSRFToken string
-	}{users, me, getCSRFToken(r)})
+	// template.Must(template.ParseFiles(
+	// 	getTemplPath("layout.html"),
+	// 	getTemplPath("banned.html")),
+	// ).Execute(w, struct {
+	// 	Users     []User
+	// 	Me        User
+	// 	CSRFToken string
+	// }{users, me, getCSRFToken(r)})
+
+	csrfToken := getCSRFToken(r)
+
+	if me.ID == 0 {
+		w.Write([]byte(`<div><a href="/login">ログイン</a></div>`))
+	} else {
+		w.Write([]byte(fmt.Sprintf(`<div><a href="/@%s"><span class="isu-account-name">%s</span>さん</a></div>`, me.AccountName, me.AccountName)))
+
+		if me.Authority == 1 {
+			w.Write([]byte(`<div><a href="/admin/banned">管理者用ページ</a></div>`))
+		}
+
+		w.Write([]byte(`<div><a href="/logout">ログアウト</a></div>`))
+	}
+
+	w.Write([]byte(`<!DOCTYPE html> <html> <head> <meta charset="utf-8"> <title>Iscogram</title> <link href="/css/style.css" media="screen" rel="stylesheet" type="text/css"> </head> <body> <div class="container"> <div class="header"> <div class="isu-title"> <h1><a href="/">Iscogram</a></h1> </div> <div class="isu-header-menu">`))
+	w.Write([]byte(`</div> </div>`))
+	w.Write([]byte(`<div><form method="post" action="/admin/banned">`))
+
+	for _, u := range users {
+		w.Write([]byte(fmt.Sprintf(
+			`<div><input type="checkbox" name="uid[]" id="uid_%d" value="%d" data-account-name="%s"> <label for="uid_%d">%s</label></div>`,
+			u.ID,
+			u.ID,
+			u.AccountName,
+			u.ID,
+			u.AccountName,
+		)))
+	}
+
+	w.Write([]byte(fmt.Sprintf(
+		`<div class="form-submit"><input type="hidden" name="csrf_token" value="%s"><input type="submit" name="submit" value="submit"></div></form></div>`,
+		csrfToken,
+	)))
+	w.Write([]byte(`</div> <script src="/js/timeago.min.js"></script> <script src="/js/main.js"></script> </body> </html>`))
 }
 
 func postAdminBanned(w http.ResponseWriter, r *http.Request) {
