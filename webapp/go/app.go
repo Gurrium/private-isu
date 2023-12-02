@@ -270,32 +270,47 @@ func makePosts(results []Post, csrfToken string, allComments bool) ([]Post, erro
 	}
 
 	if len(missCachedCommentsPostIDs) > 0 {
-		for _, postID := range missCachedCommentsPostIDs {
-			query := `
-			SELECT comments.id, comments.post_id, comments.user_id, comments.comment, comments.created_at, users.id AS "users.id", users.account_name AS "users.account_name", users.authority AS "users.authority", users.created_at AS "users.created_at"
-			FROM comments
-			JOIN users ON comments.user_id = users.id
-			WHERE post_id = ?
-			ORDER BY created_at DESC
-			`
-			if !allComments {
-				query += " LIMIT 3"
+		query := `
+		SELECT comments.id, comments.post_id, comments.user_id, comments.comment, comments.created_at, users.id AS "users.id", users.account_name AS "users.account_name", users.authority AS "users.authority", users.created_at AS "users.created_at"
+		FROM comments
+		JOIN users ON comments.user_id = users.id
+		WHERE post_id IN (?)
+		ORDER BY comments.created_at DESC
+		`
+
+		query, args, err := sqlx.In(query, missCachedCommentsPostIDs)
+		if err != nil {
+			return nil, err
+		}
+
+		query = db.Rebind(query)
+		var cs []Comment
+		err = db.Select(&cs, query, args...)
+		if err != nil {
+			return nil, err
+		}
+
+		var unsortedComments = make(map[int][]Comment)
+		for _, c := range cs {
+			commentsForPost := unsortedComments[c.PostID]
+			if !allComments && len(commentsForPost) >= 3 {
+				continue
 			}
 
-			var cs []Comment
-			err := db.Select(&cs, query, postID)
-			if err != nil {
-				return nil, err
-			}
+			unsortedComments[c.PostID] = append(unsortedComments[c.PostID], c)
+		}
+
+		for _, postID := range missCachedCommentsPostIDs {
+			c := unsortedComments[postID]
 
 			// reverse comments
-			for i, j := 0, len(cs)-1; i < j; i, j = i+1, j-1 {
-				cs[i], cs[j] = cs[j], cs[i]
+			for i, j := 0, len(c)-1; i < j; i, j = i+1, j-1 {
+				c[i], c[j] = c[j], c[i]
 			}
 
-			comments[postID] = cs
+			comments[postID] = c
 
-			b, err := json.Marshal(cs)
+			b, err := json.Marshal(c)
 			if err != nil {
 				return nil, err
 			}
