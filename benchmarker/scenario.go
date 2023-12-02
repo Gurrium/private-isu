@@ -527,6 +527,10 @@ func banScenario(s1, s2 *checker.Session, u user, admin user, image *checker.Ass
 		}
 		return nil
 	})
+	err = postImage.Play(s1)
+	if err != nil {
+		return
+	}
 
 	if len(imageURLs) < 1 {
 		return // このケースは上のCheckFuncの中で既にエラーにしてある
