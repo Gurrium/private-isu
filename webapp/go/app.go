@@ -989,49 +989,40 @@ func getAdminBanned(w http.ResponseWriter, r *http.Request) {
 }
 
 func postAdminBanned(w http.ResponseWriter, r *http.Request) {
-	log.Print("[ERROR] 叩かれてなかったので封鎖している")
+	me := getSessionUser(r)
+	if !isLogin(me) {
+		http.Redirect(w, r, "/", http.StatusFound)
+		return
+	}
 
-	w.WriteHeader(http.StatusGone)
+	if me.Authority == 0 {
+		w.WriteHeader(http.StatusForbidden)
+		return
+	}
 
-	// me := getSessionUser(r)
-	// if !isLogin(me) {
-	// 	http.Redirect(w, r, "/", http.StatusFound)
-	// 	return
-	// }
+	if r.FormValue("csrf_token") != getCSRFToken(r) {
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		return
+	}
 
-	// if me.Authority == 0 {
-	// 	w.WriteHeader(http.StatusForbidden)
-	// 	return
-	// }
+	err := r.ParseForm()
+	if err != nil {
+		log.Print(err)
+		return
+	}
 
-	// if r.FormValue("csrf_token") != getCSRFToken(r) {
-	// 	w.WriteHeader(http.StatusUnprocessableEntity)
-	// 	return
-	// }
+	for _, id := range r.Form["uid[]"] {
 
-	// query := "UPDATE `users` SET `del_flg` = ? WHERE `id` = ?"
+		i, err := strconv.Atoi(id)
+		if err != nil {
+			log.Print(err)
+			return
+		}
 
-	// err := r.ParseForm()
-	// if err != nil {
-	// 	log.Print(err)
-	// 	return
-	// }
+		deletedUserIDs = append(deletedUserIDs, i)
+	}
 
-	// IDs := []int{}
-	// for _, id := range r.Form["uid[]"] {
-	// 	db.Exec(query, 1, id)
-
-	// 	i, err := strconv.Atoi(id)
-	// 	if err != nil {
-	// 		log.Print(err)
-	// 		return
-	// 	}
-	// 	IDs = append(IDs, i)
-	// }
-
-	// deletedUserIDs = append(deletedUserIDs, IDs...)
-
-	// http.Redirect(w, r, "/admin/banned", http.StatusFound)
+	http.Redirect(w, r, "/admin/banned", http.StatusFound)
 }
 
 func main() {
