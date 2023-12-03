@@ -538,6 +538,7 @@ func getIndex(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(templateLayout(me, content)))
 }
 
+// TODO: 直接http.ResponseWriterに書き込んでいく
 func templateLayout(me User, content string) string {
 	header := ""
 	if me.ID == 0 {
