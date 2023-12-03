@@ -2,6 +2,7 @@ package main
 
 import (
 	crand "crypto/rand"
+	"crypto/sha512"
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -10,7 +11,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"path"
 	"regexp"
 	"runtime"
@@ -130,22 +130,10 @@ func validateUser(accountName, password string) bool {
 		regexp.MustCompile(`\A[0-9a-zA-Z_]{6,}\z`).MatchString(password)
 }
 
-// 今回のGo実装では言語側のエスケープの仕組みが使えないのでOSコマンドインジェクション対策できない
-// 取り急ぎPHPのescapeshellarg関数を参考に自前で実装
-// cf: http://jp2.php.net/manual/ja/function.escapeshellarg.php
-func escapeshellarg(arg string) string {
-	return "'" + strings.Replace(arg, "'", "'\\''", -1) + "'"
-}
-
 func digest(src string) string {
-	// opensslのバージョンによっては (stdin)= というのがつくので取る
-	out, err := exec.Command("/bin/bash", "-c", `printf "%s" `+escapeshellarg(src)+` | openssl dgst -sha512 | sed 's/^.*= //'`).Output()
-	if err != nil {
-		log.Print(err)
-		return ""
-	}
-
-	return strings.TrimSuffix(string(out), "\n")
+	h := sha512.New()
+	h.Write([]byte(src))
+	return fmt.Sprintf("%x", h.Sum(nil))
 }
 
 func calculateSalt(accountName string) string {
@@ -282,32 +270,47 @@ func makePosts(results []Post, csrfToken string, allComments bool) ([]Post, erro
 	}
 
 	if len(missCachedCommentsPostIDs) > 0 {
-		for _, postID := range missCachedCommentsPostIDs {
-			query := `
-			SELECT comments.id, comments.post_id, comments.user_id, comments.comment, comments.created_at, users.id AS "users.id", users.account_name AS "users.account_name", users.authority AS "users.authority", users.created_at AS "users.created_at"
-			FROM comments
-			JOIN users ON comments.user_id = users.id
-			WHERE post_id = ?
-			ORDER BY created_at DESC
-			`
-			if !allComments {
-				query += " LIMIT 3"
+		query := `
+		SELECT comments.id, comments.post_id, comments.user_id, comments.comment, comments.created_at, users.id AS "users.id", users.account_name AS "users.account_name", users.authority AS "users.authority", users.created_at AS "users.created_at"
+		FROM comments
+		JOIN users ON comments.user_id = users.id
+		WHERE post_id IN (?)
+		ORDER BY comments.created_at DESC
+		`
+
+		query, args, err := sqlx.In(query, missCachedCommentsPostIDs)
+		if err != nil {
+			return nil, err
+		}
+
+		query = db.Rebind(query)
+		var cs []Comment
+		err = db.Select(&cs, query, args...)
+		if err != nil {
+			return nil, err
+		}
+
+		var unsortedComments = make(map[int][]Comment)
+		for _, c := range cs {
+			commentsForPost := unsortedComments[c.PostID]
+			if !allComments && len(commentsForPost) >= 3 {
+				continue
 			}
 
-			var cs []Comment
-			err := db.Select(&cs, query, postID)
-			if err != nil {
-				return nil, err
-			}
+			unsortedComments[c.PostID] = append(unsortedComments[c.PostID], c)
+		}
+
+		for _, postID := range missCachedCommentsPostIDs {
+			c := unsortedComments[postID]
 
 			// reverse comments
-			for i, j := 0, len(cs)-1; i < j; i, j = i+1, j-1 {
-				cs[i], cs[j] = cs[j], cs[i]
+			for i, j := 0, len(c)-1; i < j; i, j = i+1, j-1 {
+				c[i], c[j] = c[j], c[i]
 			}
 
-			comments[postID] = cs
+			comments[postID] = c
 
-			b, err := json.Marshal(cs)
+			b, err := json.Marshal(c)
 			if err != nil {
 				return nil, err
 			}
@@ -499,7 +502,8 @@ func getIndex(w http.ResponseWriter, r *http.Request) {
 	results := []Post{}
 
 	query := `
-		SELECT posts.id, posts.user_id, posts.body, posts.mime, posts.created_at, users.id AS "users.id", users.account_name AS "users.account_name", users.authority AS "users.authority", users.created_at AS "users.created_at"
+		SELECT posts.id, posts.user_id, posts.body, posts.mime, posts.created_at,
+		 users.id AS "users.id", users.account_name AS "users.account_name", users.authority AS "users.authority", users.created_at AS "users.created_at"
 		FROM posts
 		JOIN users ON posts.user_id = users.id
 		WHERE users.id NOT IN (?)
@@ -526,21 +530,125 @@ func getIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmap := template.FuncMap{
-		"imageURL": imageURL,
+	flash := getFlash(w, r, "notice")
+	csrfToken := getCSRFToken(r)
+
+	content := templateIndex(posts, csrfToken, flash)
+
+	w.Write([]byte(templateLayout(me, content)))
+}
+
+func templateLayout(me User, content string) string {
+	header := ""
+	if me.ID == 0 {
+		header = `<div><a href="/login">ログイン</a></div>`
+	} else {
+		header = fmt.Sprintf(`<div><a href="/@%s"><span class="isu-account-name">%s</span>さん</a></div>`, me.AccountName, me.AccountName)
+
+		if me.Authority == 1 {
+			header += `
+			<div><a href="/admin/banned">管理者用ページ</a></div>
+			`
+		}
+
+		header += `<div><a href="/logout">ログアウト</a></div>`
 	}
 
-	template.Must(template.New("layout.html").Funcs(fmap).ParseFiles(
-		getTemplPath("layout.html"),
-		getTemplPath("index.html"),
-		getTemplPath("posts.html"),
-		getTemplPath("post.html"),
-	)).Execute(w, struct {
-		Posts     []Post
-		Me        User
-		CSRFToken string
-		Flash     string
-	}{posts, me, getCSRFToken(r), getFlash(w, r, "notice")})
+	body := `<!DOCTYPE html> <html> <head> <meta charset="utf-8"> <title>Iscogram</title> <link href="/css/style.css" media="screen" rel="stylesheet" type="text/css"> </head> <body> <div class="container"> <div class="header"> <div class="isu-title"> <h1><a href="/">Iscogram</a></h1> </div> <div class="isu-header-menu">`
+	body += header
+	body += `</div> </div>`
+	body += content
+	body += `</div> <script src="/js/timeago.min.js"></script> <script src="/js/main.js"></script> </body> </html>`
+
+	return body
+}
+
+func templateIndex(posts []Post, csrfToken string, flash string) string {
+	body := fmt.Sprintf(
+		`<div class="isu-submit"> <form method="post" action="/" enctype="multipart/form-data"> <div class="isu-form"> <input type="file" name="file" value="file"> </div> <div class="isu-form"> <textarea name="body"></textarea> </div> <div class="form-submit"> 
+	<input type="hidden" name="csrf_token" value="%s"> <input type="submit" name="submit" value="submit"> </div>`,
+		csrfToken,
+	)
+	if len(flash) > 0 {
+		body += `<div id="notice-message" class="alert alert-danger">`
+		body += flash
+		body += `</div>`
+	}
+	body += `</form></div>`
+
+	body += templatePosts(posts)
+	body += `<div id="isu-post-more"><button id="isu-post-more-btn">もっと見る</button><img class="isu-loading-icon" src="/img/ajax-loader.gif"></div>`
+
+	return body
+}
+
+func templatePosts(posts []Post) string {
+	body := `<div class="isu-posts">`
+	for _, p := range posts {
+		body += templatePost(p)
+	}
+	body += `</div>`
+
+	return body
+}
+
+func templatePost(post Post) string {
+	body := fmt.Sprintf(`<div class="isu-post" id="pid_%d" data-created-at="%s}">
+  <div class="isu-post-header">
+    <a href="/@%s" class="isu-post-account-name">%s</a>
+    <a href="/posts/%d" class="isu-post-permalink">
+      <time class="timeago" datetime="%s"></time>
+    </a>
+  </div>
+  <div class="isu-post-image">
+    <img src="%s" class="isu-image">
+  </div>
+  <div class="isu-post-text">
+    <a href="/@%s" class="isu-post-account-name">%s</a>
+    %s
+  </div>
+  <div class="isu-post-comment">
+    <div class="isu-post-comment-count">
+      comments: <b>%d</b>
+    </div>
+	`,
+		post.ID,
+		post.CreatedAt.Format(ISO8601Format),
+		post.User.AccountName,
+		post.User.AccountName,
+		post.ID,
+		post.CreatedAt.Format(ISO8601Format),
+		imageURL(post),
+		post.User.AccountName,
+		post.User.AccountName,
+		post.Body,
+		post.CommentCount,
+	)
+
+	for _, c := range post.Comments {
+		body += fmt.Sprintf(`
+			<div class="isu-comment">
+			<a href="/@%s" class="isu-comment-account-name">%s</a>
+			<span class="isu-comment-text">%s</span>
+			</div>
+			`,
+			c.User.AccountName,
+			c.User.AccountName,
+			c.Comment,
+		)
+	}
+
+	body += fmt.Sprintf(
+		`<div class="isu-comment-form"> <form method="post" action="/comment"> <input type="text" name="comment">
+		<input type="hidden" name="post_id" value="%d}">
+		<input type="hidden" name="csrf_token" value="%s">
+		<input type="submit" name="submit" value="submit"> </form> </div> </div> </div>
+		`,
+		post.ID,
+		post.CSRFToken,
+	)
+
+	return body
 }
 
 func getAccountName(w http.ResponseWriter, r *http.Request) {
@@ -569,7 +677,8 @@ func getAccountName(w http.ResponseWriter, r *http.Request) {
 	results := []Post{}
 
 	query = `
-		SELECT posts.id, posts.user_id, posts.body, posts.mime, posts.created_at, users.id AS "users.id", users.account_name AS "users.account_name", users.authority AS "users.authority", users.created_at AS "users.created_at"
+		SELECT posts.id, posts.user_id, posts.body, posts.mime, posts.created_at,
+		 users.id AS "users.id", users.account_name AS "users.account_name", users.authority AS "users.authority", users.created_at AS "users.created_at"
 		FROM posts
 		JOIN users ON posts.user_id = users.id
 		WHERE user_id = ? AND users.id NOT IN (?)
@@ -665,7 +774,8 @@ func getPosts(w http.ResponseWriter, r *http.Request) {
 
 	results := []Post{}
 	query := `
-		SELECT posts.id, posts.user_id, posts.body, posts.mime, posts.created_at, users.id AS "users.id", users.account_name AS "users.account_name", users.authority AS "users.authority", users.created_at AS "users.created_at"
+		SELECT posts.id, posts.user_id, posts.body, posts.mime, posts.created_at,
+		 users.id AS "users.id", users.account_name AS "users.account_name", users.authority AS "users.authority", users.created_at AS "users.created_at"
 		FROM posts
 		JOIN users ON posts.user_id = users.id
 		WHERE posts.created_at <= ? AND users.id NOT IN (?)
@@ -717,7 +827,8 @@ func getPostsID(w http.ResponseWriter, r *http.Request) {
 
 	results := []Post{}
 	query := `
-		SELECT posts.id, posts.user_id, posts.body, posts.mime, posts.created_at, users.id AS "users.id", users.account_name AS "users.account_name", users.authority AS "users.authority", users.created_at AS "users.created_at"
+		SELECT posts.id, posts.user_id, posts.body, posts.mime, posts.created_at,
+		 users.id AS "users.id", users.account_name AS "users.account_name", users.authority AS "users.authority", users.created_at AS "users.created_at"
 		FROM posts 
 		JOIN users ON posts.user_id = users.id
 		WHERE posts.id = ? AND users.id NOT IN (?)
@@ -974,60 +1085,86 @@ func getAdminBanned(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	template.Must(template.ParseFiles(
-		getTemplPath("layout.html"),
-		getTemplPath("banned.html")),
-	).Execute(w, struct {
-		Users     []User
-		Me        User
-		CSRFToken string
-	}{users, me, getCSRFToken(r)})
+	// template.Must(template.ParseFiles(
+	// 	getTemplPath("layout.html"),
+	// 	getTemplPath("banned.html")),
+	// ).Execute(w, struct {
+	// 	Users     []User
+	// 	Me        User
+	// 	CSRFToken string
+	// }{users, me, getCSRFToken(r)})
+
+	csrfToken := getCSRFToken(r)
+
+	if me.ID == 0 {
+		w.Write([]byte(`<div><a href="/login">ログイン</a></div>`))
+	} else {
+		w.Write([]byte(fmt.Sprintf(`<div><a href="/@%s"><span class="isu-account-name">%s</span>さん</a></div>`, me.AccountName, me.AccountName)))
+
+		if me.Authority == 1 {
+			w.Write([]byte(`<div><a href="/admin/banned">管理者用ページ</a></div>`))
+		}
+
+		w.Write([]byte(`<div><a href="/logout">ログアウト</a></div>`))
+	}
+
+	w.Write([]byte(`<!DOCTYPE html> <html> <head> <meta charset="utf-8"> <title>Iscogram</title> <link href="/css/style.css" media="screen" rel="stylesheet" type="text/css"> </head> <body> <div class="container"> <div class="header"> <div class="isu-title"> <h1><a href="/">Iscogram</a></h1> </div> <div class="isu-header-menu">`))
+	w.Write([]byte(`</div> </div>`))
+	w.Write([]byte(`<div><form method="post" action="/admin/banned">`))
+
+	for _, u := range users {
+		w.Write([]byte(fmt.Sprintf(
+			`<div><input type="checkbox" name="uid[]" id="uid_%d" value="%d" data-account-name="%s"> <label for="uid_%d">%s</label></div>`,
+			u.ID,
+			u.ID,
+			u.AccountName,
+			u.ID,
+			u.AccountName,
+		)))
+	}
+
+	w.Write([]byte(fmt.Sprintf(
+		`<div class="form-submit"><input type="hidden" name="csrf_token" value="%s"><input type="submit" name="submit" value="submit"></div></form></div>`,
+		csrfToken,
+	)))
+	w.Write([]byte(`</div> <script src="/js/timeago.min.js"></script> <script src="/js/main.js"></script> </body> </html>`))
 }
 
 func postAdminBanned(w http.ResponseWriter, r *http.Request) {
-	log.Print("[ERROR] 叩かれてなかったので封鎖している")
+	me := getSessionUser(r)
+	if !isLogin(me) {
+		http.Redirect(w, r, "/", http.StatusFound)
+		return
+	}
 
-	w.WriteHeader(http.StatusGone)
+	if me.Authority == 0 {
+		w.WriteHeader(http.StatusForbidden)
+		return
+	}
 
-	// me := getSessionUser(r)
-	// if !isLogin(me) {
-	// 	http.Redirect(w, r, "/", http.StatusFound)
-	// 	return
-	// }
+	if r.FormValue("csrf_token") != getCSRFToken(r) {
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		return
+	}
 
-	// if me.Authority == 0 {
-	// 	w.WriteHeader(http.StatusForbidden)
-	// 	return
-	// }
+	err := r.ParseForm()
+	if err != nil {
+		log.Print(err)
+		return
+	}
 
-	// if r.FormValue("csrf_token") != getCSRFToken(r) {
-	// 	w.WriteHeader(http.StatusUnprocessableEntity)
-	// 	return
-	// }
+	for _, id := range r.Form["uid[]"] {
 
-	// query := "UPDATE `users` SET `del_flg` = ? WHERE `id` = ?"
+		i, err := strconv.Atoi(id)
+		if err != nil {
+			log.Print(err)
+			return
+		}
 
-	// err := r.ParseForm()
-	// if err != nil {
-	// 	log.Print(err)
-	// 	return
-	// }
+		deletedUserIDs = append(deletedUserIDs, i)
+	}
 
-	// IDs := []int{}
-	// for _, id := range r.Form["uid[]"] {
-	// 	db.Exec(query, 1, id)
-
-	// 	i, err := strconv.Atoi(id)
-	// 	if err != nil {
-	// 		log.Print(err)
-	// 		return
-	// 	}
-	// 	IDs = append(IDs, i)
-	// }
-
-	// deletedUserIDs = append(deletedUserIDs, IDs...)
-
-	// http.Redirect(w, r, "/admin/banned", http.StatusFound)
+	http.Redirect(w, r, "/admin/banned", http.StatusFound)
 }
 
 func main() {
