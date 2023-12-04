@@ -533,123 +533,118 @@ func getIndex(w http.ResponseWriter, r *http.Request) {
 	flash := getFlash(w, r, "notice")
 	csrfToken := getCSRFToken(r)
 
-	content := templateIndex(posts, csrfToken, flash)
-
-	w.Write([]byte(templateLayout(me, content)))
+	templateLayout(
+		w,
+		me,
+		func(w io.Writer) {
+			templateIndex(w, posts, csrfToken, flash)
+		},
+	)
 }
 
-// TODO: 直接http.ResponseWriterに書き込んでいく
-func templateLayout(me User, content string) string {
-	header := ""
+func templateLayout(w io.Writer, me User, content func(w io.Writer)) {
+	w.Write([]byte(`<!DOCTYPE html> <html> <head> <meta charset="utf-8"> <title>Iscogram</title> <link href="/css/style.css" media="screen" rel="stylesheet" type="text/css"> </head> <body> <div class="container"> <div class="header"> <div class="isu-title"> <h1><a href="/">Iscogram</a></h1> </div> <div class="isu-header-menu">`))
+
 	if me.ID == 0 {
-		header = `<div><a href="/login">ログイン</a></div>`
+		w.Write([]byte(`<div><a href="/login">ログイン</a></div>`))
 	} else {
-		header = fmt.Sprintf(`<div><a href="/@%s"><span class="isu-account-name">%s</span>さん</a></div>`, me.AccountName, me.AccountName)
+		w.Write([]byte(fmt.Sprintf(`<div><a href="/@%s"><span class="isu-account-name">%s</span>さん</a></div>`, me.AccountName, me.AccountName)))
 
 		if me.Authority == 1 {
-			header += `
-			<div><a href="/admin/banned">管理者用ページ</a></div>
-			`
+			w.Write([]byte(`<div><a href="/admin/banned">管理者用ページ</a></div>`))
 		}
 
-		header += `<div><a href="/logout">ログアウト</a></div>`
+		w.Write([]byte(`<div><a href="/logout">ログアウト</a></div>`))
 	}
 
-	body := `<!DOCTYPE html> <html> <head> <meta charset="utf-8"> <title>Iscogram</title> <link href="/css/style.css" media="screen" rel="stylesheet" type="text/css"> </head> <body> <div class="container"> <div class="header"> <div class="isu-title"> <h1><a href="/">Iscogram</a></h1> </div> <div class="isu-header-menu">`
-	body += header
-	body += `</div> </div>`
-	body += content
-	body += `</div> <script src="/js/timeago.min.js"></script> <script src="/js/main.js"></script> </body> </html>`
-
-	return body
+	w.Write([]byte(`</div> </div>`))
+	content(w)
+	w.Write([]byte(`</div> <script src="/js/timeago.min.js"></script> <script src="/js/main.js"></script> </body> </html>`))
 }
 
-func templateIndex(posts []Post, csrfToken string, flash string) string {
-	body := fmt.Sprintf(
+func templateIndex(w io.Writer, posts []Post, csrfToken string, flash string) {
+	w.Write([]byte(fmt.Sprintf(
 		`<div class="isu-submit"> <form method="post" action="/" enctype="multipart/form-data"> <div class="isu-form"> <input type="file" name="file" value="file"> </div> <div class="isu-form"> <textarea name="body"></textarea> </div> <div class="form-submit"> 
 	<input type="hidden" name="csrf_token" value="%s"> <input type="submit" name="submit" value="submit"> </div>`,
 		csrfToken,
-	)
+	)))
 	if len(flash) > 0 {
-		body += `<div id="notice-message" class="alert alert-danger">`
-		body += flash
-		body += `</div>`
+		w.Write([]byte(`<div id="notice-message" class="alert alert-danger">`))
+		w.Write([]byte(flash))
+		w.Write([]byte(`</div>`))
 	}
-	body += `</form></div>`
+	w.Write([]byte(`</form></div>`))
 
-	body += templatePosts(posts)
-	body += `<div id="isu-post-more"><button id="isu-post-more-btn">もっと見る</button><img class="isu-loading-icon" src="/img/ajax-loader.gif"></div>`
-
-	return body
+	templatePosts(w, posts)
+	w.Write([]byte(`<div id="isu-post-more"><button id="isu-post-more-btn">もっと見る</button><img class="isu-loading-icon" src="/img/ajax-loader.gif"></div>`))
 }
 
-func templatePosts(posts []Post) string {
-	body := `<div class="isu-posts">`
+func templatePosts(w io.Writer, posts []Post) {
+	w.Write([]byte(`<div class="isu-posts">`))
 	for _, p := range posts {
-		body += templatePost(p)
+		templatePost(w, p)
 	}
-	body += `</div>`
-
-	return body
+	w.Write([]byte(`</div>`))
 }
 
-func templatePost(post Post) string {
-	body := fmt.Sprintf(`<div class="isu-post" id="pid_%d" data-created-at="%s}">
-  <div class="isu-post-header">
-    <a href="/@%s" class="isu-post-account-name">%s</a>
-    <a href="/posts/%d" class="isu-post-permalink">
-      <time class="timeago" datetime="%s"></time>
-    </a>
-  </div>
-  <div class="isu-post-image">
-    <img src="%s" class="isu-image">
-  </div>
-  <div class="isu-post-text">
-    <a href="/@%s" class="isu-post-account-name">%s</a>
-    %s
-  </div>
-  <div class="isu-post-comment">
-    <div class="isu-post-comment-count">
-      comments: <b>%d</b>
-    </div>
-	`,
-		post.ID,
-		post.CreatedAt.Format(ISO8601Format),
-		post.User.AccountName,
-		post.User.AccountName,
-		post.ID,
-		post.CreatedAt.Format(ISO8601Format),
-		imageURL(post),
-		post.User.AccountName,
-		post.User.AccountName,
-		post.Body,
-		post.CommentCount,
-	)
+func templatePost(w io.Writer, post Post) {
+	w.Write([]byte(
+		fmt.Sprintf(`
+			<div class="isu-post" id="pid_%d" data-created-at="%s">
+				<div class="isu-post-header">
+					<a href="/@%s" class="isu-post-account-name">%s</a>
+					<a href="/posts/%d" class="isu-post-permalink">
+					<time class="timeago" datetime="%s"></time>
+					</a>
+				</div>
+				<div class="isu-post-image">
+					<img src="%s" class="isu-image">
+				</div>
+				<div class="isu-post-text">
+					<a href="/@%s" class="isu-post-account-name">%s</a>
+					%s
+				</div>
+				<div class="isu-post-comment">
+					<div class="isu-post-comment-count">
+					comments: <b>%d</b>
+			</div>
+			`,
+			post.ID,
+			post.CreatedAt.Format(ISO8601Format),
+			post.User.AccountName,
+			post.User.AccountName,
+			post.ID,
+			post.CreatedAt.Format(ISO8601Format),
+			imageURL(post),
+			post.User.AccountName,
+			post.User.AccountName,
+			post.Body,
+			post.CommentCount,
+		),
+	))
 
 	for _, c := range post.Comments {
-		body += fmt.Sprintf(`
+		w.Write([]byte(fmt.Sprintf(`
 			<div class="isu-comment">
-			<a href="/@%s" class="isu-comment-account-name">%s</a>
-			<span class="isu-comment-text">%s</span>
+				<a href="/@%s" class="isu-comment-account-name">%s</a>
+				<span class="isu-comment-text">%s</span>
 			</div>
 			`,
 			c.User.AccountName,
 			c.User.AccountName,
 			c.Comment,
-		)
+		)))
 	}
 
-	body += fmt.Sprintf(
+	w.Write([]byte(fmt.Sprintf(
 		`<div class="isu-comment-form"> <form method="post" action="/comment"> <input type="text" name="comment">
-		<input type="hidden" name="post_id" value="%d}">
+		<input type="hidden" name="post_id" value="%d">
 		<input type="hidden" name="csrf_token" value="%s">
 		<input type="submit" name="submit" value="submit"> </form> </div> </div> </div>
 		`,
 		post.ID,
 		post.CSRFToken,
-	)
-
-	return body
+	)))
 }
 
 func getAccountName(w http.ResponseWriter, r *http.Request) {
@@ -1085,15 +1080,6 @@ func getAdminBanned(w http.ResponseWriter, r *http.Request) {
 		log.Print(err)
 		return
 	}
-
-	// template.Must(template.ParseFiles(
-	// 	getTemplPath("layout.html"),
-	// 	getTemplPath("banned.html")),
-	// ).Execute(w, struct {
-	// 	Users     []User
-	// 	Me        User
-	// 	CSRFToken string
-	// }{users, me, getCSRFToken(r)})
 
 	csrfToken := getCSRFToken(r)
 
