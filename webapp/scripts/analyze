@@ -1,0 +1,11 @@
+#!/bin/sh
+
+set -v
+
+now=$(date +%Y%m%d-%H%M%S)
+
+analyze_access="sudo alp json --file /var/log/nginx/access.log -r --sort=avg -m \"/image/[0-9]+.(jpg|png|gif), /@[a-zA-Z]+, /posts/[0-9]+\""
+analyze_slow_query="sudo pt-query-digest /var/log/mysql/slow.log"
+
+ssh isucon@privateisup "$analyze_access" | tee logs/nginx/digest.log.$now
+ssh isucon@privateisup "$analyze_slow_query" | tee logs/mysql/digest.log.$now
