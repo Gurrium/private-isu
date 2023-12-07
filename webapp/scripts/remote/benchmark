@@ -1,0 +1,6 @@
+#!/bin/sh
+
+sudo su - isucon
+benchmark="/home/isucon/private_isu.git/benchmarker/bin/benchmarker -u /home/isucon/private_isu.git/benchmarker/userdata -t http://privateisup"
+
+ssh isucon@privateisub
