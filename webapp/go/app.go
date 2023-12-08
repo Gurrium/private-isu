@@ -731,23 +731,30 @@ func getAccountName(w http.ResponseWriter, r *http.Request) {
 
 	me := getSessionUser(r)
 
-	fmap := template.FuncMap{
-		"imageURL": imageURL,
-	}
+	templateLayout(
+		w,
+		me,
+		func(w io.Writer) {
+			templateUser(w, posts, user, postCount, commentCount, commentedCount)
+		},
+	)
+}
 
-	template.Must(template.New("layout.html").Funcs(fmap).ParseFiles(
-		getTemplPath("layout.html"),
-		getTemplPath("user.html"),
-		getTemplPath("posts.html"),
-		getTemplPath("post.html"),
-	)).Execute(w, struct {
-		Posts          []Post
-		User           User
-		PostCount      int
-		CommentCount   int
-		CommentedCount int
-		Me             User
-	}{posts, user, postCount, commentCount, commentedCount, me})
+func templateUser(w io.Writer, posts []Post, user User, postCount, commentCount, commentedCount int) {
+	w.Write([]byte(fmt.Sprintf(`
+		<div class="isu-user">
+		<div><span class="isu-user-account-name">%sさん</span>のページ</div>
+		<div>投稿数 <span class="isu-post-count">%d</span></div>
+		<div>コメント数 <span class="isu-comment-count">%d</span></div>
+		<div>被コメント数 <span class="isu-commented-count">%d</span></div>
+		</div>`,
+		user.AccountName,
+		postCount,
+		commentCount,
+		commentedCount,
+	)))
+
+	templatePosts(w, posts)
 }
 
 func getPosts(w http.ResponseWriter, r *http.Request) {
@@ -851,18 +858,17 @@ func getPostsID(w http.ResponseWriter, r *http.Request) {
 
 	me := getSessionUser(r)
 
-	fmap := template.FuncMap{
-		"imageURL": imageURL,
-	}
+	templateLayout(
+		w,
+		me,
+		func(w io.Writer) {
+			templatePostID(w, p)
+		},
+	)
+}
 
-	template.Must(template.New("layout.html").Funcs(fmap).ParseFiles(
-		getTemplPath("layout.html"),
-		getTemplPath("post_id.html"),
-		getTemplPath("post.html"),
-	)).Execute(w, struct {
-		Post Post
-		Me   User
-	}{p, me})
+func templatePostID(w io.Writer, post Post) {
+	templatePost(w, post)
 }
 
 func postIndex(w http.ResponseWriter, r *http.Request) {
