@@ -3,7 +3,6 @@ package main
 import (
 	crand "crypto/rand"
 	"crypto/sha512"
-	"encoding/json"
 	"fmt"
 	"html/template"
 	"io"
@@ -24,6 +23,7 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/gorilla/sessions"
 	"github.com/jmoiron/sqlx"
+	"github.com/sugawarayuuta/sonnet"
 
 	// profiler
 	_ "net/http/pprof"
@@ -253,7 +253,7 @@ func makePosts(results []Post, csrfToken string, allComments bool) ([]Post, erro
 			cachedComment, ok := cachedComments[fmt.Sprintf("comments_%d_%t", p.ID, !allComments)]
 			if ok {
 				var cs []Comment
-				err := json.Unmarshal(cachedComment.Value, &cs)
+				err := sonnet.Unmarshal(cachedComment.Value, &cs)
 				if err != nil {
 					return nil, err
 				}
@@ -310,7 +310,7 @@ func makePosts(results []Post, csrfToken string, allComments bool) ([]Post, erro
 
 			comments[postID] = c
 
-			b, err := json.Marshal(c)
+			b, err := sonnet.Marshal(c)
 			if err != nil {
 				return nil, err
 			}
