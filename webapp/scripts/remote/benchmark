@@ -1,5 +1,9 @@
 #!/bin/sh
 
+set -v
+
+pprof="/home/isucon/.local/go/bin/go tool pprof -proto -seconds 60 -output profile.pb.gz http://localhost:6060/debug/pprof/profile"
 benchmark="/home/isucon/private_isu.git/benchmarker/bin/benchmarker -u /home/isucon/private_isu.git/benchmarker/userdata -t http://privateisup"
 
+ssh isucon@privateisup "$pprof" &
 ssh isucon@privateisub "$benchmark"

@@ -9,3 +9,4 @@ webapp/mysql/*
 webapp/logs/mysql/*
 webapp/logs/nginx/*
 webapp/logs/benchmark/*
+webapp/logs/pprof/*

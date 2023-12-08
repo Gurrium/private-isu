@@ -9,3 +9,6 @@ analyze_slow_query="sudo pt-query-digest /var/log/mysql/slow.log"
 
 ssh isucon@privateisup "$analyze_access" | tee logs/nginx/digest.log.$now
 ssh isucon@privateisup "$analyze_slow_query" | tee logs/mysql/digest.log.$now
+
+rsync -v isucon@privateisup:/home/isucon/profile.pb.gz logs/pprof/profile.pb.gz.$now
+go tool pprof -http=localhost:6060 logs/pprof/profile.pb.gz.$now
