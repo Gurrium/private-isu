@@ -3,7 +3,6 @@ package main
 import (
 	crand "crypto/rand"
 	"crypto/sha512"
-	"encoding/json"
 	"fmt"
 	"html/template"
 	"io"
@@ -24,6 +23,7 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/gorilla/sessions"
 	"github.com/jmoiron/sqlx"
+	"github.com/sugawarayuuta/sonnet"
 
 	// profiler
 	_ "net/http/pprof"
@@ -253,7 +253,7 @@ func makePosts(results []Post, csrfToken string, allComments bool) ([]Post, erro
 			cachedComment, ok := cachedComments[fmt.Sprintf("comments_%d_%t", p.ID, !allComments)]
 			if ok {
 				var cs []Comment
-				err := json.Unmarshal(cachedComment.Value, &cs)
+				err := sonnet.Unmarshal(cachedComment.Value, &cs)
 				if err != nil {
 					return nil, err
 				}
@@ -310,7 +310,7 @@ func makePosts(results []Post, csrfToken string, allComments bool) ([]Post, erro
 
 			comments[postID] = c
 
-			b, err := json.Marshal(c)
+			b, err := sonnet.Marshal(c)
 			if err != nil {
 				return nil, err
 			}
@@ -502,8 +502,8 @@ func getIndex(w http.ResponseWriter, r *http.Request) {
 	results := []Post{}
 
 	query := `
-		SELECT posts.id, posts.user_id, posts.body, posts.mime, posts.created_at,
-		 users.id AS "users.id", users.account_name AS "users.account_name", users.authority AS "users.authority", users.created_at AS "users.created_at"
+		SELECT posts.id, posts.body, posts.mime, posts.created_at,
+		users.account_name AS "users.account_name", users.authority AS "users.authority"
 		FROM posts
 		JOIN users ON posts.user_id = users.id
 		WHERE users.id NOT IN (?)
@@ -731,23 +731,30 @@ func getAccountName(w http.ResponseWriter, r *http.Request) {
 
 	me := getSessionUser(r)
 
-	fmap := template.FuncMap{
-		"imageURL": imageURL,
-	}
+	templateLayout(
+		w,
+		me,
+		func(w io.Writer) {
+			templateUser(w, posts, user, postCount, commentCount, commentedCount)
+		},
+	)
+}
 
-	template.Must(template.New("layout.html").Funcs(fmap).ParseFiles(
-		getTemplPath("layout.html"),
-		getTemplPath("user.html"),
-		getTemplPath("posts.html"),
-		getTemplPath("post.html"),
-	)).Execute(w, struct {
-		Posts          []Post
-		User           User
-		PostCount      int
-		CommentCount   int
-		CommentedCount int
-		Me             User
-	}{posts, user, postCount, commentCount, commentedCount, me})
+func templateUser(w io.Writer, posts []Post, user User, postCount, commentCount, commentedCount int) {
+	w.Write([]byte(fmt.Sprintf(`
+		<div class="isu-user">
+		<div><span class="isu-user-account-name">%sさん</span>のページ</div>
+		<div>投稿数 <span class="isu-post-count">%d</span></div>
+		<div>コメント数 <span class="isu-comment-count">%d</span></div>
+		<div>被コメント数 <span class="isu-commented-count">%d</span></div>
+		</div>`,
+		user.AccountName,
+		postCount,
+		commentCount,
+		commentedCount,
+	)))
+
+	templatePosts(w, posts)
 }
 
 func getPosts(w http.ResponseWriter, r *http.Request) {
@@ -803,14 +810,7 @@ func getPosts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmap := template.FuncMap{
-		"imageURL": imageURL,
-	}
-
-	template.Must(template.New("posts.html").Funcs(fmap).ParseFiles(
-		getTemplPath("posts.html"),
-		getTemplPath("post.html"),
-	)).Execute(w, posts)
+	templatePosts(w, posts)
 }
 
 func getPostsID(w http.ResponseWriter, r *http.Request) {
@@ -858,18 +858,17 @@ func getPostsID(w http.ResponseWriter, r *http.Request) {
 
 	me := getSessionUser(r)
 
-	fmap := template.FuncMap{
-		"imageURL": imageURL,
-	}
+	templateLayout(
+		w,
+		me,
+		func(w io.Writer) {
+			templatePostID(w, p)
+		},
+	)
+}
 
-	template.Must(template.New("layout.html").Funcs(fmap).ParseFiles(
-		getTemplPath("layout.html"),
-		getTemplPath("post_id.html"),
-		getTemplPath("post.html"),
-	)).Execute(w, struct {
-		Post Post
-		Me   User
-	}{p, me})
+func templatePostID(w io.Writer, post Post) {
+	templatePost(w, post)
 }
 
 func postIndex(w http.ResponseWriter, r *http.Request) {

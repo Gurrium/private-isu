@@ -11,4 +11,5 @@ restart="cd /home/isucon/private-isu/webapp/go && /home/isucon/.local/go/bin/go 
 rotate_mysql="sudo mv -v /var/log/mysql/slow.log /var/log/mysql/slow.log.$now && mysqladmin -uisuconp -pisuconp flush-logs"
 rotate_nginx="sudo mv -v /var/log/nginx/access.log /var/log/nginx/access.log.$now && sudo systemctl reload nginx"
 
+git push origin $branch
 ssh isucon@privateisup "$update && $restart && $rotate_mysql && $rotate_nginx"
