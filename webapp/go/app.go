@@ -502,7 +502,7 @@ func getIndex(w http.ResponseWriter, r *http.Request) {
 	results := []Post{}
 
 	query := `
-		SELECT posts.id, posts.body, posts.created_at,
+		SELECT posts.id, posts.body, posts.mime, posts.created_at,
 		users.account_name AS "users.account_name", users.authority AS "users.authority"
 		FROM posts
 		JOIN users ON posts.user_id = users.id
