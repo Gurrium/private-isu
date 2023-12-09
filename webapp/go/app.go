@@ -588,6 +588,8 @@ func templatePosts(w io.Writer, posts []Post) {
 }
 
 func templatePost(w io.Writer, post Post) {
+	createdAt := post.CreatedAt.Format(ISO8601Format)
+
 	w.Write([]byte(
 		fmt.Sprintf(`
 			<div class="isu-post" id="pid_%d" data-created-at="%s">
@@ -610,11 +612,11 @@ func templatePost(w io.Writer, post Post) {
 			</div>
 			`,
 			post.ID,
-			post.CreatedAt.Format(ISO8601Format),
+			createdAt,
 			post.User.AccountName,
 			post.User.AccountName,
 			post.ID,
-			post.CreatedAt.Format(ISO8601Format),
+			createdAt,
 			imageURL(post),
 			post.User.AccountName,
 			post.User.AccountName,
