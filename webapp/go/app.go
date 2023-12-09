@@ -161,9 +161,9 @@ func getSessionUser(r *http.Request) User {
 	authority := session.Values["authority"]
 
 	u := User{
-		ID:          int(uid.(int64)),
+		ID:          uid.(int),
 		AccountName: accountName.(string),
-		Authority:   int(authority.(int64)),
+		Authority:   authority.(int),
 	}
 
 	return u
@@ -484,7 +484,7 @@ func postRegister(w http.ResponseWriter, r *http.Request) {
 		log.Print(err)
 		return
 	}
-	session.Values["user_id"] = uid
+	session.Values["user_id"] = int(uid)
 	session.Values["account_name"] = accountName
 	session.Values["authority"] = 0
 	session.Values["csrf_token"] = secureRandomStr(16)
