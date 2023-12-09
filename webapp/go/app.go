@@ -161,9 +161,9 @@ func getSessionUser(r *http.Request) User {
 	authority := session.Values["authority"]
 
 	u := User{
-		ID:          uid.(int),
+		ID:          int(uid.(int64)),
 		AccountName: accountName.(string),
-		Authority:   authority.(int),
+		Authority:   int(authority.(int64)),
 	}
 
 	return u
