@@ -157,11 +157,13 @@ func getSessionUser(r *http.Request) User {
 		return User{}
 	}
 
-	u := User{}
+	accountName := session.Values["account_name"]
+	authority := session.Values["authority"]
 
-	err := db.Get(&u, "SELECT * FROM users WHERE id = ?", uid)
-	if err != nil {
-		return User{}
+	u := User{
+		ID:          uid.(int),
+		AccountName: accountName.(string),
+		Authority:   authority.(int),
 	}
 
 	return u
@@ -408,6 +410,8 @@ func postLogin(w http.ResponseWriter, r *http.Request) {
 	if u != nil {
 		session := getSession(r)
 		session.Values["user_id"] = u.ID
+		session.Values["account_name"] = u.AccountName
+		session.Values["authority"] = u.Authority
 		session.Values["csrf_token"] = secureRandomStr(16)
 		session.Save(r, w)
 
@@ -481,6 +485,8 @@ func postRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	session.Values["user_id"] = uid
+	session.Values["account_name"] = accountName
+	session.Values["authority"] = 0
 	session.Values["csrf_token"] = secureRandomStr(16)
 	session.Save(r, w)
 
@@ -490,6 +496,8 @@ func postRegister(w http.ResponseWriter, r *http.Request) {
 func getLogout(w http.ResponseWriter, r *http.Request) {
 	session := getSession(r)
 	delete(session.Values, "user_id")
+	delete(session.Values, "account_name")
+	delete(session.Values, "authority")
 	session.Options = &sessions.Options{MaxAge: -1}
 	session.Save(r, w)
 
