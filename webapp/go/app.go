@@ -624,27 +624,28 @@ func templatePosts(w io.Writer, posts []Post) {
 }
 
 func templatePost(w io.Writer, post Post) {
-	createdAt := post.CreatedAt.Format(ISO8601Format)
-
+	createdAt := []byte(post.CreatedAt.Format(ISO8601Format))
+	postID := []byte(strconv.Itoa(post.ID))
+	userAccountName := []byte(post.User.AccountName)
 
 	w.Write([]byte(`<div class="isu-post" id="pid_`))
-	w.Write([]byte(strconv.Itoa(post.ID)))
+	w.Write(postID)
 	w.Write([]byte(`" data-created-at="`))
-	w.Write([]byte(createdAt))
+	w.Write(createdAt)
 	w.Write([]byte(`"><div class="isu-post-header"><a href="/@`))
-	w.Write([]byte(post.User.AccountName))
+	w.Write(userAccountName)
 	w.Write([]byte(`" class="isu-post-account-name">`))
-	w.Write([]byte(post.User.AccountName))
+	w.Write(userAccountName)
 	w.Write([]byte(`</a><a href="/posts/`))
-	w.Write([]byte(strconv.Itoa(post.ID)))
+	w.Write(postID)
 	w.Write([]byte(`" class="isu-post-permalink"><time class="timeago" datetime="`))
-	w.Write([]byte(createdAt))
+	w.Write(createdAt)
 	w.Write([]byte(`"></time></a></div><div class="isu-post-image"><img src="`))
 	w.Write([]byte(imageURL(post)))
 	w.Write([]byte(`" class="isu-image"></div><div class="isu-post-text"><a href="/@`))
-	w.Write([]byte(post.User.AccountName))
+	w.Write(userAccountName)
 	w.Write([]byte(`" class="isu-post-account-name">`))
-	w.Write([]byte(post.User.AccountName))
+	w.Write(userAccountName)
 	w.Write([]byte(`</a>`))
 	w.Write([]byte(post.Body))
 	w.Write([]byte(`</div><div class="isu-post-comment"><div class="isu-post-comment-count">comments: <b>`))
@@ -687,10 +688,12 @@ func templatePost(w io.Writer, post Post) {
 	// ))
 
 	for _, c := range post.Comments {
+		userAccountName := []byte(c.User.AccountName)
+		
 		w.Write([]byte(`<div class="isu-comment"><a href="/@`))
-		w.Write([]byte(c.User.AccountName))
+		w.Write(userAccountName)
 		w.Write([]byte(`" class="isu-comment-account-name">`))
-		w.Write([]byte(c.User.AccountName))
+		w.Write(userAccountName)
 		w.Write([]byte(`</a><span class="isu-comment-text">`))
 		w.Write([]byte(c.Comment))
 		w.Write([]byte(`</span></div>`))
@@ -707,11 +710,11 @@ func templatePost(w io.Writer, post Post) {
 	}
 
 	w.Write([]byte(`<div class="isu-comment-form"><form method="post" action="/comment"> <input type="text" name="comment"><input type="hidden" name="post_id" value="`))
-	w.Write([]byte(strconv.Itoa(post.ID)))
+	w.Write(postID)
 	w.Write([]byte(`"><input type="hidden" name="csrf_token" value="`))
 	w.Write([]byte(post.CSRFToken))
 	w.Write([]byte(`"><input type="submit" name="submit" value="submit"> </form> </div> </div> </div>`))
- 	// w.Write([]byte(fmt.Sprintf(
+	// w.Write([]byte(fmt.Sprintf(
 	// 	`<div class="isu-comment-form"> <form method="post" action="/comment"> <input type="text" name="comment">
 	// 	<input type="hidden" name="post_id" value="%d">
 	// 	<input type="hidden" name="csrf_token" value="%s">
