@@ -509,7 +509,15 @@ func getIndex(w http.ResponseWriter, r *http.Request) {
 
 	results := []Post{}
 
-	query := `
+	cachedIndexPosts, err := memcacheClient.Get("posts")
+	if err == nil {
+		err := sonnet.Unmarshal(cachedIndexPosts.Value, &results)
+		if err != nil {
+			log.Print(err)
+			return
+		}
+	} else if err == memcache.ErrCacheMiss {
+		query := `
 		SELECT posts.id, posts.body, posts.mime, posts.created_at,
 		users.account_name AS "users.account_name", users.authority AS "users.authority"
 		FROM posts
@@ -519,15 +527,35 @@ func getIndex(w http.ResponseWriter, r *http.Request) {
 		LIMIT ?
 		`
 
-	query, args, err := sqlx.In(query, deletedUserIDs, postsPerPage)
-	if err != nil {
-		log.Print(err)
-		return
-	}
+		query, args, err := sqlx.In(query, deletedUserIDs, postsPerPage)
+		if err != nil {
+			log.Print(err)
+			return
+		}
 
-	query = db.Rebind(query)
-	err = db.Select(&results, query, args...)
-	if err != nil {
+		query = db.Rebind(query)
+		err = db.Select(&results, query, args...)
+		if err != nil {
+			log.Print(err)
+			return
+		}
+
+		b, err := sonnet.Marshal(results)
+		if err != nil {
+			log.Print(err)
+			return
+		}
+
+		err = memcacheClient.Set(&memcache.Item{
+			Key:        "posts",
+			Value:      b,
+			Expiration: 5,
+		})
+		if err != nil {
+			log.Print(err)
+			return
+		}
+	} else {
 		log.Print(err)
 		return
 	}
@@ -975,6 +1003,8 @@ func postIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	memcacheClient.Delete("posts")
+
 	http.Redirect(w, r, "/posts/"+strconv.FormatInt(pid, 10), http.StatusFound)
 }
 
@@ -1059,6 +1089,29 @@ func postComment(w http.ResponseWriter, r *http.Request) {
 	memcacheClient.Delete(fmt.Sprintf("comment_count_%d", postID))
 	memcacheClient.Delete(fmt.Sprintf("comments_%d_%t", postID, true))
 	memcacheClient.Delete(fmt.Sprintf("comments_%d_%t", postID, false))
+
+	flag := 0
+	err = db.Get(
+		&flag,
+		`
+		WITH recent_posts AS (
+		SELECT id FROM posts
+		ORDER BY created_at DESC
+		LIMIT 20
+		)
+		SELECT COUNT(*) FROM recent_posts
+		WHERE id = ?
+		`,
+		postID,
+	)
+	if err != nil {
+		log.Print(err)
+		return
+	}
+
+	if flag == 1 {
+		memcacheClient.Delete("posts")
+	}
 
 	http.Redirect(w, r, fmt.Sprintf("/posts/%d", postID), http.StatusFound)
 }
@@ -1159,6 +1212,8 @@ func postAdminBanned(w http.ResponseWriter, r *http.Request) {
 
 		deletedUserIDs = append(deletedUserIDs, i)
 	}
+
+	memcacheClient.Delete("posts")
 
 	http.Redirect(w, r, "/admin/banned", http.StatusFound)
 }
