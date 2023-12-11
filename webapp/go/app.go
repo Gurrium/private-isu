@@ -88,6 +88,8 @@ func dbInitialize() {
 		"DELETE FROM users WHERE id > 1000",
 		"DELETE FROM posts WHERE id > 10000",
 		"DELETE FROM comments WHERE id > 100000",
+		// initialize posts.comment_count with initial comment count
+		"UPDATE posts SET comment_count = (SELECT COUNT(*) FROM comments WHERE comments.post_id = posts.id)",
 	}
 
 	for _, sql := range sqls {
@@ -216,11 +218,11 @@ func makePosts(results []Post, csrfToken string, allComments bool) ([]Post, erro
 
 	if len(missCachedCommentCountPostIDs) > 0 {
 		type Count struct {
-			PostID int `db:"post_id"`
-			Count  int `db:"count"`
+			PostID       int `db:"id"`
+			CommentCount int `db:"comment_count"`
 		}
 
-		query := "SELECT post_id, COUNT(*) AS count FROM comments WHERE post_id IN (?) GROUP BY post_id"
+		query := "SELECT id, comment_count FROM posts WHERE id IN (?)"
 		query, args, err := sqlx.In(query, missCachedCommentCountPostIDs)
 		if err != nil {
 			return nil, err
@@ -234,11 +236,11 @@ func makePosts(results []Post, csrfToken string, allComments bool) ([]Post, erro
 		}
 
 		for _, count := range counts {
-			commentCounts[count.PostID] = count.Count
+			commentCounts[count.PostID] = count.CommentCount
 
 			err := memcacheClient.Set(&memcache.Item{
 				Key:        fmt.Sprintf("comment_count_%d", count.PostID),
-				Value:      []byte(strconv.Itoa(count.Count)),
+				Value:      []byte(strconv.Itoa(count.CommentCount)),
 				Expiration: 10,
 			})
 			if err != nil {
@@ -689,7 +691,7 @@ func templatePost(w io.Writer, post Post) {
 
 	for _, c := range post.Comments {
 		userAccountName := []byte(c.User.AccountName)
-		
+
 		w.Write([]byte(`<div class="isu-comment"><a href="/@`))
 		w.Write(userAccountName)
 		w.Write([]byte(`" class="isu-comment-account-name">`))
@@ -1121,6 +1123,13 @@ func postComment(w http.ResponseWriter, r *http.Request) {
 
 	query := "INSERT INTO comments (post_id, user_id, comment) VALUES (?,?,?)"
 	_, err = db.Exec(query, postID, me.ID, r.FormValue("comment"))
+	if err != nil {
+		log.Print(err)
+		return
+	}
+
+	query = "UPDATE posts SET comment_count = comment_count + 1 WHERE id = ?"
+	_, err = db.Exec(query, postID)
 	if err != nil {
 		log.Print(err)
 		return
