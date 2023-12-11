@@ -88,7 +88,7 @@ func dbInitialize() {
 		"DELETE FROM users WHERE id > 1000",
 		"DELETE FROM posts WHERE id > 10000",
 		"DELETE FROM comments WHERE id > 100000",
-		// initialize posts.comment_count with initial comment count
+		// initialize posts.comment_count
 		"UPDATE posts SET comment_count = (SELECT COUNT(*) FROM comments WHERE comments.post_id = posts.id)",
 	}
 
@@ -187,12 +187,19 @@ func getFlash(w http.ResponseWriter, r *http.Request, key string) string {
 func makePosts(results []Post, csrfToken string, allComments bool) ([]Post, error) {
 	var posts []Post
 
-	var cachedCommentCountKeys []string
-	var cachedCommentKeys []string
-	var postIDs []int
+	cachedCommentCountKeysMap := make(map[int]string, len(results))
+	cachedCommentKeysMap := make(map[int]string, len(results))
+	cachedCommentCountKeys := make([]string, 0, len(results))
+	cachedCommentKeys := make([]string, 0, len(results))
+	postIDs := make([]int, 0, len(results))
+
 	for _, p := range results {
 		cachedCommentCountKeys = append(cachedCommentCountKeys, fmt.Sprintf("comment_count_%d", p.ID))
+		cachedCommentCountKeysMap[p.ID] = cachedCommentCountKeys[len(cachedCommentCountKeys)-1]
+
 		cachedCommentKeys = append(cachedCommentKeys, fmt.Sprintf("comments_%d_%t", p.ID, !allComments))
+		cachedCommentKeysMap[p.ID] = cachedCommentKeys[len(cachedCommentKeys)-1]
+
 		postIDs = append(postIDs, p.ID)
 	}
 
@@ -201,7 +208,7 @@ func makePosts(results []Post, csrfToken string, allComments bool) ([]Post, erro
 	cachedCommentCounts, err := memcacheClient.GetMulti(cachedCommentCountKeys)
 	if err == nil {
 		for _, p := range results {
-			cachedCommentCount, ok := cachedCommentCounts[fmt.Sprintf("comment_count_%d", p.ID)]
+			cachedCommentCount, ok := cachedCommentCounts[cachedCommentCountKeysMap[p.ID]]
 			if ok {
 				commentCount, _ := strconv.Atoi(string(cachedCommentCount.Value))
 
@@ -239,7 +246,7 @@ func makePosts(results []Post, csrfToken string, allComments bool) ([]Post, erro
 			commentCounts[count.PostID] = count.CommentCount
 
 			err := memcacheClient.Set(&memcache.Item{
-				Key:        fmt.Sprintf("comment_count_%d", count.PostID),
+				Key:        cachedCommentCountKeysMap[count.PostID],
 				Value:      []byte(strconv.Itoa(count.CommentCount)),
 				Expiration: 10,
 			})
@@ -254,7 +261,7 @@ func makePosts(results []Post, csrfToken string, allComments bool) ([]Post, erro
 	cachedComments, err := memcacheClient.GetMulti(cachedCommentKeys)
 	if err == nil {
 		for _, p := range results {
-			cachedComment, ok := cachedComments[fmt.Sprintf("comments_%d_%t", p.ID, !allComments)]
+			cachedComment, ok := cachedComments[cachedCommentKeysMap[p.ID]]
 			if ok {
 				var cs []Comment
 				err := sonnet.Unmarshal(cachedComment.Value, &cs)
@@ -294,7 +301,7 @@ func makePosts(results []Post, csrfToken string, allComments bool) ([]Post, erro
 			return nil, err
 		}
 
-		var unsortedComments = make(map[int][]Comment)
+		var unsortedComments = make(map[int][]Comment, len(cs))
 		for _, c := range cs {
 			commentsForPost := unsortedComments[c.PostID]
 			if !allComments && len(commentsForPost) >= 3 {
@@ -320,7 +327,7 @@ func makePosts(results []Post, csrfToken string, allComments bool) ([]Post, erro
 			}
 
 			err = memcacheClient.Set(&memcache.Item{
-				Key:        fmt.Sprintf("comments_%d_%t", postID, !allComments),
+				Key:        cachedCommentKeysMap[postID],
 				Value:      b,
 				Expiration: 10,
 			})
