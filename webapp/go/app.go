@@ -185,7 +185,7 @@ func getFlash(w http.ResponseWriter, r *http.Request, key string) string {
 }
 
 func makePosts(results []Post, csrfToken string, allComments bool) ([]Post, error) {
-	posts := make([]Post, 0, len(results))
+	var posts []Post
 
 	cachedCommentCountKeysMap := make(map[int]string, len(results))
 	cachedCommentKeysMap := make(map[int]string, len(results))
@@ -204,7 +204,7 @@ func makePosts(results []Post, csrfToken string, allComments bool) ([]Post, erro
 	}
 
 	commentCounts := make(map[int]int, len(results))
-	missCachedCommentCountPostIDs := make([]int, 0, len(results))
+	var missCachedCommentCountPostIDs []int
 	cachedCommentCounts, err := memcacheClient.GetMulti(cachedCommentCountKeys)
 	if err == nil {
 		for _, p := range results {
@@ -236,7 +236,7 @@ func makePosts(results []Post, csrfToken string, allComments bool) ([]Post, erro
 		}
 
 		query = db.Rebind(query)
-		counts := make([]Count, 0, len(missCachedCommentCountPostIDs))
+		var counts []Count
 		err = db.Select(&counts, query, args...)
 		if err != nil {
 			return nil, err
@@ -257,13 +257,13 @@ func makePosts(results []Post, csrfToken string, allComments bool) ([]Post, erro
 	}
 
 	comments := make(map[int][]Comment, len(results))
-	missCachedCommentsPostIDs := make([]int, 0, len(results))
+	var missCachedCommentsPostIDs []int
 	cachedComments, err := memcacheClient.GetMulti(cachedCommentKeys)
 	if err == nil {
 		for _, p := range results {
 			cachedComment, ok := cachedComments[cachedCommentKeysMap[p.ID]]
 			if ok {
-				cs := make([]Comment, 0, postsPerPage)
+				var cs []Comment
 				err := sonnet.Unmarshal(cachedComment.Value, &cs)
 				if err != nil {
 					return nil, err
@@ -295,8 +295,7 @@ func makePosts(results []Post, csrfToken string, allComments bool) ([]Post, erro
 		}
 
 		query = db.Rebind(query)
-		// 10は適当
-		cs  := make([]Comment, 0, 10)
+		var cs []Comment
 		err = db.Select(&cs, query, args...)
 		if err != nil {
 			return nil, err
