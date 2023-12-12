@@ -184,6 +184,12 @@ func getFlash(w http.ResponseWriter, r *http.Request, key string) string {
 	}
 }
 
+type SimpleComment struct {
+	PostID          int    `db:"post_id"`
+	Comment         string `db:"comment"`
+	UserAccountName string `db:"user_account_name"`
+}
+
 func makePosts(results []Post, csrfToken string, allComments bool) ([]Post, error) {
 	var posts []Post
 
@@ -256,14 +262,14 @@ func makePosts(results []Post, csrfToken string, allComments bool) ([]Post, erro
 		}
 	}
 
-	comments := make(map[int][]Comment, len(results))
+	comments := make(map[int][]SimpleComment, len(results))
 	var missCachedCommentsPostIDs []int
 	cachedComments, err := memcacheClient.GetMulti(cachedCommentKeys)
 	if err == nil {
 		for _, p := range results {
 			cachedComment, ok := cachedComments[cachedCommentKeysMap[p.ID]]
 			if ok {
-				var cs []Comment
+				var cs []SimpleComment
 				err := sonnet.Unmarshal(cachedComment.Value, &cs)
 				if err != nil {
 					return nil, err
@@ -282,7 +288,7 @@ func makePosts(results []Post, csrfToken string, allComments bool) ([]Post, erro
 
 	if len(missCachedCommentsPostIDs) > 0 {
 		query := `
-		SELECT comments.post_id, comments.comment, users.account_name AS "users.account_name"
+		SELECT comments.post_id, comments.comment, users.account_name AS "user_account_name"
 		FROM comments
 		JOIN users ON comments.user_id = users.id
 		WHERE post_id IN (?)
@@ -295,13 +301,13 @@ func makePosts(results []Post, csrfToken string, allComments bool) ([]Post, erro
 		}
 
 		query = db.Rebind(query)
-		var cs []Comment
+		var cs []SimpleComment
 		err = db.Select(&cs, query, args...)
 		if err != nil {
 			return nil, err
 		}
 
-		var unsortedComments = make(map[int][]Comment, len(cs))
+		var unsortedComments = make(map[int][]SimpleComment, len(cs))
 		for _, c := range cs {
 			commentsForPost := unsortedComments[c.PostID]
 			if !allComments && len(commentsForPost) >= 3 {
@@ -338,8 +344,19 @@ func makePosts(results []Post, csrfToken string, allComments bool) ([]Post, erro
 	}
 
 	for _, p := range results {
+		cs := make([]Comment, 0, len(comments[p.ID]))
+		for _, c := range comments[p.ID] {
+			cs = append(cs, Comment{
+				PostID:  c.PostID,
+				Comment: c.Comment,
+				User: User{
+					AccountName: c.UserAccountName,
+				},
+			})
+		}
+
 		p.CommentCount = commentCounts[p.ID]
-		p.Comments = comments[p.ID]
+		p.Comments = cs
 		p.CSRFToken = csrfToken
 
 		posts = append(posts, p)
