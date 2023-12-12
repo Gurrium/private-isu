@@ -282,7 +282,7 @@ func makePosts(results []Post, csrfToken string, allComments bool) ([]Post, erro
 
 	if len(missCachedCommentsPostIDs) > 0 {
 		query := `
-		SELECT comments.id, comments.post_id, comments.user_id, comments.comment, comments.created_at, users.id AS "users.id", users.account_name AS "users.account_name", users.authority AS "users.authority", users.created_at AS "users.created_at"
+		SELECT comments.post_id, comments.comment, users.account_name AS "users.account_name"
 		FROM comments
 		JOIN users ON comments.user_id = users.id
 		WHERE post_id IN (?)
