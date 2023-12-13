@@ -655,7 +655,7 @@ func templateIndex(w io.Writer, posts []Post, csrfToken string, flash string) {
 	w.Write(templateIndexByteArray[0])
 	w.Write([]byte(csrfToken))
 	w.Write(templateIndexByteArray[1])
-
+	
 	if len(flash) > 0 {
 		w.Write(templateIndexByteArray[2])
 		w.Write([]byte(flash))
@@ -769,13 +769,13 @@ func templatePost(w io.Writer, post Post) {
 	for _, c := range post.Comments {
 		userAccountName := []byte(c.User.AccountName)
 
-		w.Write(templatePostByteArray[12])
+	w.Write(templatePostByteArray[12])
 		w.Write(userAccountName)
-		w.Write(templatePostByteArray[13])
+	w.Write(templatePostByteArray[13])
 		w.Write(userAccountName)
-		w.Write(templatePostByteArray[14])
+	w.Write(templatePostByteArray[14])
 		w.Write([]byte(c.Comment))
-		w.Write(templatePostByteArray[15])
+	w.Write(templatePostByteArray[15])
 		// w.Write([]byte(fmt.Sprintf(`
 		// 	<div class="isu-comment">
 		// 		<a href="/@%s" class="isu-comment-account-name">%s</a>
@@ -1035,7 +1035,9 @@ func postIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if r.FormValue("csrf_token") != getCSRFToken(r) {
+	csrfToken := getCSRFToken(r)
+
+	if r.FormValue("csrf_token") != csrfToken {
 		w.WriteHeader(http.StatusUnprocessableEntity)
 		return
 	}
