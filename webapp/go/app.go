@@ -535,14 +535,14 @@ func getIndex(w http.ResponseWriter, r *http.Request) {
 
 	results := []Post{}
 
-	cachedIndexPosts, err := memcacheClient.Get("posts")
-	if err == nil {
-		err := sonnet.Unmarshal(cachedIndexPosts.Value, &results)
-		if err != nil {
-			log.Print(err)
-			return
-		}
-	} else if err == memcache.ErrCacheMiss {
+	// cachedIndexPosts, err := memcacheClient.Get("posts")
+	// if err == nil {
+	// 	err := sonnet.Unmarshal(cachedIndexPosts.Value, &results)
+	// 	if err != nil {
+	// 		log.Print(err)
+	// 		return
+	// 	}
+	// } else if err == memcache.ErrCacheMiss {
 		query := `
 		SELECT posts.id, posts.body, posts.mime, posts.created_at,
 		users.account_name AS "users.account_name", users.authority AS "users.authority"
@@ -566,25 +566,25 @@ func getIndex(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		b, err := sonnet.Marshal(results)
-		if err != nil {
-			log.Print(err)
-			return
-		}
+		// b, err := sonnet.Marshal(results)
+		// if err != nil {
+		// 	log.Print(err)
+		// 	return
+		// }
 
-		err = memcacheClient.Set(&memcache.Item{
-			Key:        "posts",
-			Value:      b,
-			Expiration: 5,
-		})
-		if err != nil {
-			log.Print(err)
-			return
-		}
-	} else {
-		log.Print(err)
-		return
-	}
+		// err = memcacheClient.Set(&memcache.Item{
+		// 	Key:        "posts",
+		// 	Value:      b,
+		// 	Expiration: 5,
+		// })
+		// if err != nil {
+		// 	log.Print(err)
+		// 	return
+		// }
+	// } else {
+	// 	log.Print(err)
+	// 	return
+	// }
 
 	posts, err := makePosts(results, getCSRFToken(r), false)
 	if err != nil {
