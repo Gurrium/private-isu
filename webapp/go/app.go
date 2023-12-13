@@ -1035,9 +1035,7 @@ func postIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	csrfToken := getCSRFToken(r)
-
-	if r.FormValue("csrf_token") != csrfToken {
+	if r.FormValue("csrf_token") != getCSRFToken(r) {
 		w.WriteHeader(http.StatusUnprocessableEntity)
 		return
 	}
