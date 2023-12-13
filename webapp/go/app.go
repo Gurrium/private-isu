@@ -604,49 +604,102 @@ func getIndex(w http.ResponseWriter, r *http.Request) {
 	)
 }
 
+var templateLayoutByteArray = [...][]byte{
+	[]byte(`<!DOCTYPE html> <html> <head> <meta charset="utf-8"> <title>Iscogram</title> <link href="/css/style.css" media="screen" rel="stylesheet" type="text/css"> </head> <body> <div class="container"> <div class="header"> <div class="isu-title"> <h1><a href="/">Iscogram</a></h1> </div> <div class="isu-header-menu">`),
+	[]byte(`<div><a href="/login">ログイン</a></div>`),
+	[]byte(`<div><a href="/@`),
+	[]byte(`"><span class="isu-account-name">`),
+	[]byte(`</span>さん</a></div>`),
+	[]byte(`<div><a href="/admin/banned">管理者用ページ</a></div>`),
+	[]byte(`<div><a href="/logout">ログアウト</a></div>`),
+	[]byte(`</div> </div>`),
+	[]byte(`</div> <script src="/js/timeago.min.js"></script> <script src="/js/main.js"></script> </body> </html>`),
+}
+
 func templateLayout(w io.Writer, me User, content func(w io.Writer)) {
-	w.Write([]byte(`<!DOCTYPE html> <html> <head> <meta charset="utf-8"> <title>Iscogram</title> <link href="/css/style.css" media="screen" rel="stylesheet" type="text/css"> </head> <body> <div class="container"> <div class="header"> <div class="isu-title"> <h1><a href="/">Iscogram</a></h1> </div> <div class="isu-header-menu">`))
+	w.Write(templateLayoutByteArray[0])
 
 	if me.ID == 0 {
-		w.Write([]byte(`<div><a href="/login">ログイン</a></div>`))
+		w.Write(templateLayoutByteArray[1])
 	} else {
-		w.Write([]byte(fmt.Sprintf(`<div><a href="/@%s"><span class="isu-account-name">%s</span>さん</a></div>`, me.AccountName, me.AccountName)))
+		var accountName = []byte(me.AccountName)
+		w.Write(templateLayoutByteArray[2])
+		w.Write(accountName)
+		w.Write(templateLayoutByteArray[3])
+		w.Write(accountName)
+		w.Write(templateLayoutByteArray[4])
 
 		if me.Authority == 1 {
-			w.Write([]byte(`<div><a href="/admin/banned">管理者用ページ</a></div>`))
+			w.Write(templateLayoutByteArray[5])
 		}
 
-		w.Write([]byte(`<div><a href="/logout">ログアウト</a></div>`))
+		w.Write(templateLayoutByteArray[6])
 	}
 
-	w.Write([]byte(`</div> </div>`))
+	w.Write(templateLayoutByteArray[7])
 	content(w)
-	w.Write([]byte(`</div> <script src="/js/timeago.min.js"></script> <script src="/js/main.js"></script> </body> </html>`))
+	w.Write(templateLayoutByteArray[8])
+}
+
+var templateIndexByteArray = [...][]byte{
+	[]byte(`<div class="isu-submit"> <form method="post" action="/" enctype="multipart/form-data"> <div class="isu-form"> <input type="file" name="file" value="file"> </div> <div class="isu-form"> <textarea name="body"></textarea> </div> <div class="form-submit"> 
+	<input type="hidden" name="csrf_token" value="`),
+	[]byte(`"> <input type="submit" name="submit" value="submit"> </div>`),
+	[]byte(`<div id="notice-message" class="alert alert-danger">`),
+	[]byte(`</div>`),
+	[]byte(`</form></div>`),
+	[]byte(`<div id="isu-post-more"><button id="isu-post-more-btn">もっと見る</button><img class="isu-loading-icon" src="/img/ajax-loader.gif"></div>`),
 }
 
 func templateIndex(w io.Writer, posts []Post, csrfToken string, flash string) {
-	w.Write([]byte(fmt.Sprintf(
-		`<div class="isu-submit"> <form method="post" action="/" enctype="multipart/form-data"> <div class="isu-form"> <input type="file" name="file" value="file"> </div> <div class="isu-form"> <textarea name="body"></textarea> </div> <div class="form-submit"> 
-	<input type="hidden" name="csrf_token" value="%s"> <input type="submit" name="submit" value="submit"> </div>`,
-		csrfToken,
-	)))
+	w.Write(templateIndexByteArray[0])
+	w.Write([]byte(csrfToken))
+	w.Write(templateIndexByteArray[1])
+	
 	if len(flash) > 0 {
-		w.Write([]byte(`<div id="notice-message" class="alert alert-danger">`))
+		w.Write(templateIndexByteArray[2])
 		w.Write([]byte(flash))
-		w.Write([]byte(`</div>`))
+		w.Write(templateIndexByteArray[3])
 	}
-	w.Write([]byte(`</form></div>`))
+	w.Write(templateIndexByteArray[4])
 
 	templatePosts(w, posts)
-	w.Write([]byte(`<div id="isu-post-more"><button id="isu-post-more-btn">もっと見る</button><img class="isu-loading-icon" src="/img/ajax-loader.gif"></div>`))
+	w.Write(templateIndexByteArray[5])
+}
+
+var templatePostsByteArray = [...][]byte{
+	[]byte(`<div class="isu-posts">`),
+	[]byte(`</div>`),
 }
 
 func templatePosts(w io.Writer, posts []Post) {
-	w.Write([]byte(`<div class="isu-posts">`))
+	w.Write(templatePostsByteArray[0])
 	for _, p := range posts {
 		templatePost(w, p)
 	}
-	w.Write([]byte(`</div>`))
+	w.Write(templatePostsByteArray[1])
+}
+
+var templatePostByteArray = [...][]byte{
+	[]byte(`<div class="isu-post" id="pid_`),
+	[]byte(`" data-created-at="`),
+	[]byte(`"><div class="isu-post-header"><a href="/@`),
+	[]byte(`" class="isu-post-account-name">`),
+	[]byte(`</a><a href="/posts/`),
+	[]byte(`" class="isu-post-permalink"><time class="timeago" datetime="`),
+	[]byte(`"></time></a></div><div class="isu-post-image"><img src="`),
+	[]byte(`" class="isu-image"></div><div class="isu-post-text"><a href="/@`),
+	[]byte(`" class="isu-post-account-name">`),
+	[]byte(`</a>`),
+	[]byte(`</div><div class="isu-post-comment"><div class="isu-post-comment-count">comments: <b>`),
+	[]byte(`</b></div>`),
+	[]byte(`<div class="isu-comment"><a href="/@`),
+	[]byte(`" class="isu-comment-account-name">`),
+	[]byte(`</a><span class="isu-comment-text">`),
+	[]byte(`</span></div>`),
+	[]byte(`<div class="isu-comment-form"><form method="post" action="/comment"> <input type="text" name="comment"><input type="hidden" name="post_id" value="`),
+	[]byte(`"><input type="hidden" name="csrf_token" value="`),
+	[]byte(`"><input type="submit" name="submit" value="submit"> </form> </div> </div> </div>`),
 }
 
 func templatePost(w io.Writer, post Post) {
@@ -654,29 +707,29 @@ func templatePost(w io.Writer, post Post) {
 	postID := []byte(strconv.Itoa(post.ID))
 	userAccountName := []byte(post.User.AccountName)
 
-	w.Write([]byte(`<div class="isu-post" id="pid_`))
+	w.Write(templatePostByteArray[0])
 	w.Write(postID)
-	w.Write([]byte(`" data-created-at="`))
+	w.Write(templatePostByteArray[1])
 	w.Write(createdAt)
-	w.Write([]byte(`"><div class="isu-post-header"><a href="/@`))
+	w.Write(templatePostByteArray[2])
 	w.Write(userAccountName)
-	w.Write([]byte(`" class="isu-post-account-name">`))
+	w.Write(templatePostByteArray[3])
 	w.Write(userAccountName)
-	w.Write([]byte(`</a><a href="/posts/`))
+	w.Write(templatePostByteArray[4])
 	w.Write(postID)
-	w.Write([]byte(`" class="isu-post-permalink"><time class="timeago" datetime="`))
+	w.Write(templatePostByteArray[5])
 	w.Write(createdAt)
-	w.Write([]byte(`"></time></a></div><div class="isu-post-image"><img src="`))
+	w.Write(templatePostByteArray[6])
 	w.Write([]byte(imageURL(post)))
-	w.Write([]byte(`" class="isu-image"></div><div class="isu-post-text"><a href="/@`))
+	w.Write(templatePostByteArray[7])
 	w.Write(userAccountName)
-	w.Write([]byte(`" class="isu-post-account-name">`))
+	w.Write(templatePostByteArray[8])
 	w.Write(userAccountName)
-	w.Write([]byte(`</a>`))
+	w.Write(templatePostByteArray[9])
 	w.Write([]byte(post.Body))
-	w.Write([]byte(`</div><div class="isu-post-comment"><div class="isu-post-comment-count">comments: <b>`))
+	w.Write(templatePostByteArray[10])
 	w.Write([]byte(strconv.Itoa(post.CommentCount)))
-	w.Write([]byte(`</b></div>`))
+	w.Write(templatePostByteArray[11])
 
 	// w.Write([]byte(
 	// 	fmt.Sprintf(`
@@ -716,13 +769,13 @@ func templatePost(w io.Writer, post Post) {
 	for _, c := range post.Comments {
 		userAccountName := []byte(c.User.AccountName)
 
-		w.Write([]byte(`<div class="isu-comment"><a href="/@`))
+	w.Write(templatePostByteArray[12])
 		w.Write(userAccountName)
-		w.Write([]byte(`" class="isu-comment-account-name">`))
+	w.Write(templatePostByteArray[13])
 		w.Write(userAccountName)
-		w.Write([]byte(`</a><span class="isu-comment-text">`))
+	w.Write(templatePostByteArray[14])
 		w.Write([]byte(c.Comment))
-		w.Write([]byte(`</span></div>`))
+	w.Write(templatePostByteArray[15])
 		// w.Write([]byte(fmt.Sprintf(`
 		// 	<div class="isu-comment">
 		// 		<a href="/@%s" class="isu-comment-account-name">%s</a>
@@ -735,11 +788,11 @@ func templatePost(w io.Writer, post Post) {
 		// )))
 	}
 
-	w.Write([]byte(`<div class="isu-comment-form"><form method="post" action="/comment"> <input type="text" name="comment"><input type="hidden" name="post_id" value="`))
+	w.Write(templatePostByteArray[16])
 	w.Write(postID)
-	w.Write([]byte(`"><input type="hidden" name="csrf_token" value="`))
+	w.Write(templatePostByteArray[17])
 	w.Write([]byte(post.CSRFToken))
-	w.Write([]byte(`"><input type="submit" name="submit" value="submit"> </form> </div> </div> </div>`))
+	w.Write(templatePostByteArray[18])
 	// w.Write([]byte(fmt.Sprintf(
 	// 	`<div class="isu-comment-form"> <form method="post" action="/comment"> <input type="text" name="comment">
 	// 	<input type="hidden" name="post_id" value="%d">
