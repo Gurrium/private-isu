@@ -17,8 +17,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bradfitz/gomemcache/memcache"
+	m "github.com/bradfitz/gomemcache/memcache"
 	gsm "github.com/bradleypeabody/gorilla-sessions-memcache"
+	"github.com/coocood/freecache"
 	"github.com/go-chi/chi/v5"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/gorilla/sessions"
@@ -32,8 +33,8 @@ import (
 var (
 	db             *sqlx.DB
 	store          *gsm.MemcacheStore
-	memcacheClient *memcache.Client
 	deletedUserIDs []int
+	cache          *freecache.Cache
 )
 
 const (
@@ -78,8 +79,9 @@ func init() {
 	if memdAddr == "" {
 		memdAddr = "localhost:11211"
 	}
-	memcacheClient = memcache.New(memdAddr)
+	memcacheClient := m.New(memdAddr)
 	store = gsm.NewMemcacheStore(memcacheClient, "iscogram_", []byte("sendagaya"))
+	cache = freecache.NewCache(10 * 1024 * 1024)
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 }
 
@@ -193,40 +195,32 @@ type SimpleComment struct {
 func makePosts(results []Post, csrfToken string, allComments bool) ([]Post, error) {
 	var posts []Post
 
-	cachedCommentCountKeysMap := make(map[int]string, len(results))
-	cachedCommentKeysMap := make(map[int]string, len(results))
-	cachedCommentCountKeys := make([]string, 0, len(results))
-	cachedCommentKeys := make([]string, 0, len(results))
-	postIDs := make([]int, 0, len(results))
+	cachedCommentCountKeysMap := make(map[int][]byte, len(results))
+	cachedCommentKeysMap := make(map[int][]byte, len(results))
 
 	for _, p := range results {
-		cachedCommentCountKeys = append(cachedCommentCountKeys, fmt.Sprintf("comment_count_%d", p.ID))
-		cachedCommentCountKeysMap[p.ID] = cachedCommentCountKeys[len(cachedCommentCountKeys)-1]
-
-		cachedCommentKeys = append(cachedCommentKeys, fmt.Sprintf("comments_%d_%t", p.ID, !allComments))
-		cachedCommentKeysMap[p.ID] = cachedCommentKeys[len(cachedCommentKeys)-1]
-
-		postIDs = append(postIDs, p.ID)
+		cachedCommentCountKeysMap[p.ID] = []byte(fmt.Sprintf("comment_count_%d", p.ID))
+		cachedCommentKeysMap[p.ID] = []byte(fmt.Sprintf("comments_%d_%t", p.ID, !allComments))
 	}
 
 	commentCounts := make(map[int]int, len(results))
 	var missCachedCommentCountPostIDs []int
-	cachedCommentCounts, err := memcacheClient.GetMulti(cachedCommentCountKeys)
-	if err == nil {
-		for _, p := range results {
-			cachedCommentCount, ok := cachedCommentCounts[cachedCommentCountKeysMap[p.ID]]
-			if ok {
-				commentCount, _ := strconv.Atoi(string(cachedCommentCount.Value))
-
-				commentCounts[p.ID] = commentCount
-			} else {
-				missCachedCommentCountPostIDs = append(missCachedCommentCountPostIDs, p.ID)
-			}
+	for _, p := range results {
+		key, ok := cachedCommentCountKeysMap[p.ID]
+		if !ok {
+			continue
 		}
-	} else if err == memcache.ErrCacheMiss {
-		missCachedCommentCountPostIDs = postIDs
-	} else {
-		return nil, err
+
+		value, err := cache.Get(key)
+		if err == nil {
+			commentCount, _ := strconv.Atoi(string(value))
+
+			commentCounts[p.ID] = commentCount
+		} else if err == freecache.ErrNotFound {
+			missCachedCommentCountPostIDs = append(missCachedCommentCountPostIDs, p.ID)
+		} else {
+			return nil, err
+		}
 	}
 
 	if len(missCachedCommentCountPostIDs) > 0 {
@@ -251,11 +245,7 @@ func makePosts(results []Post, csrfToken string, allComments bool) ([]Post, erro
 		for _, count := range counts {
 			commentCounts[count.PostID] = count.CommentCount
 
-			err := memcacheClient.Set(&memcache.Item{
-				Key:        cachedCommentCountKeysMap[count.PostID],
-				Value:      []byte(strconv.Itoa(count.CommentCount)),
-				Expiration: 10,
-			})
+			err := cache.Set([]byte(cachedCommentCountKeysMap[count.PostID]), []byte(strconv.Itoa(count.CommentCount)), 10)
 			if err != nil {
 				return nil, err
 			}
@@ -264,26 +254,26 @@ func makePosts(results []Post, csrfToken string, allComments bool) ([]Post, erro
 
 	comments := make(map[int][]SimpleComment, len(results))
 	var missCachedCommentsPostIDs []int
-	cachedComments, err := memcacheClient.GetMulti(cachedCommentKeys)
-	if err == nil {
-		for _, p := range results {
-			cachedComment, ok := cachedComments[cachedCommentKeysMap[p.ID]]
-			if ok {
-				var cs []SimpleComment
-				err := sonnet.Unmarshal(cachedComment.Value, &cs)
-				if err != nil {
-					return nil, err
-				}
-
-				comments[p.ID] = cs
-			} else {
-				missCachedCommentsPostIDs = append(missCachedCommentsPostIDs, p.ID)
-			}
+	for _, p := range results {
+		key, ok := cachedCommentKeysMap[p.ID]
+		if !ok {
+			continue
 		}
-	} else if err == memcache.ErrCacheMiss {
-		missCachedCommentsPostIDs = postIDs
-	} else {
-		return nil, err
+
+		value, err := cache.Get(key)
+		if err == nil {
+			var cs []SimpleComment
+			err := sonnet.Unmarshal(value, &cs)
+			if err != nil {
+				return nil, err
+			}
+
+			comments[p.ID] = cs
+		} else if err == freecache.ErrNotFound {
+			missCachedCommentsPostIDs = append(missCachedCommentsPostIDs, p.ID)
+		} else {
+			return nil, err
+		}
 	}
 
 	if len(missCachedCommentsPostIDs) > 0 {
@@ -332,11 +322,7 @@ func makePosts(results []Post, csrfToken string, allComments bool) ([]Post, erro
 				return nil, err
 			}
 
-			err = memcacheClient.Set(&memcache.Item{
-				Key:        cachedCommentKeysMap[postID],
-				Value:      b,
-				Expiration: 10,
-			})
+			err = cache.Set(cachedCommentKeysMap[postID], b, 10)
 			if err != nil {
 				return nil, err
 			}
@@ -530,19 +516,21 @@ func getLogout(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 
+var postsKey = []byte("posts")
+
 func getIndex(w http.ResponseWriter, r *http.Request) {
 	me := getSessionUser(r)
 
 	results := []Post{}
 
-	cachedIndexPosts, err := memcacheClient.Get("posts")
+	cachedIndexPosts, err := cache.Get(postsKey)
 	if err == nil {
-		err := sonnet.Unmarshal(cachedIndexPosts.Value, &results)
+		err := sonnet.Unmarshal(cachedIndexPosts, &results)
 		if err != nil {
 			log.Print(err)
 			return
 		}
-	} else if err == memcache.ErrCacheMiss {
+	} else if err == freecache.ErrNotFound {
 		query := `
 		SELECT posts.id, posts.body, posts.mime, posts.created_at,
 		users.account_name AS "users.account_name", users.authority AS "users.authority"
@@ -572,11 +560,7 @@ func getIndex(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		err = memcacheClient.Set(&memcache.Item{
-			Key:        "posts",
-			Value:      b,
-			Expiration: 5,
-		})
+		err = cache.Set(postsKey, b, 5)
 		if err != nil {
 			log.Print(err)
 			return
@@ -1122,7 +1106,7 @@ func postIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	memcacheClient.Delete("posts")
+	cache.Del(postsKey)
 
 	http.Redirect(w, r, "/posts/"+strconv.FormatInt(pid, 10), http.StatusFound)
 }
@@ -1212,9 +1196,9 @@ func postComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	memcacheClient.Delete(fmt.Sprintf("comment_count_%d", postID))
-	memcacheClient.Delete(fmt.Sprintf("comments_%d_%t", postID, true))
-	memcacheClient.Delete(fmt.Sprintf("comments_%d_%t", postID, false))
+	cache.Del([]byte(fmt.Sprintf("comment_count_%d", postID)))
+	cache.Del([]byte(fmt.Sprintf("comments_%d_%t", postID, true)))
+	cache.Del([]byte(fmt.Sprintf("comments_%d_%t", postID, false)))
 
 	flag := 0
 	err = db.Get(
@@ -1236,7 +1220,7 @@ func postComment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if flag == 1 {
-		memcacheClient.Delete("posts")
+		cache.Del(postsKey)
 	}
 
 	http.Redirect(w, r, fmt.Sprintf("/posts/%d", postID), http.StatusFound)
@@ -1339,7 +1323,7 @@ func postAdminBanned(w http.ResponseWriter, r *http.Request) {
 		deletedUserIDs = append(deletedUserIDs, i)
 	}
 
-	memcacheClient.Delete("posts")
+	cache.Del(postsKey)
 
 	http.Redirect(w, r, "/admin/banned", http.StatusFound)
 }
