@@ -792,7 +792,7 @@ func templatePost(w io.Writer, post Post) {
 	// 	post.CSRFToken,
 	// )))
 
-	templatePostBuf.WriteTo(w)
+	w.Write(templatePostBuf.Bytes())
 	templatePostBuf.Reset()
 }
 
