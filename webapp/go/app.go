@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	crand "crypto/rand"
 	"crypto/sha512"
 	"fmt"
@@ -691,29 +692,31 @@ func templatePost(w io.Writer, post Post) {
 	postID := []byte(strconv.Itoa(post.ID))
 	userAccountName := []byte(post.User.AccountName)
 
-	w.Write(templatePostByteArray[0])
-	w.Write(postID)
-	w.Write(templatePostByteArray[1])
-	w.Write(createdAt)
-	w.Write(templatePostByteArray[2])
-	w.Write(userAccountName)
-	w.Write(templatePostByteArray[3])
-	w.Write(userAccountName)
-	w.Write(templatePostByteArray[4])
-	w.Write(postID)
-	w.Write(templatePostByteArray[5])
-	w.Write(createdAt)
-	w.Write(templatePostByteArray[6])
-	w.Write([]byte(imageURL(post)))
-	w.Write(templatePostByteArray[7])
-	w.Write(userAccountName)
-	w.Write(templatePostByteArray[8])
-	w.Write(userAccountName)
-	w.Write(templatePostByteArray[9])
-	w.Write([]byte(post.Body))
-	w.Write(templatePostByteArray[10])
-	w.Write([]byte(strconv.Itoa(post.CommentCount)))
-	w.Write(templatePostByteArray[11])
+	var buf bytes.Buffer
+
+	buf.Write(templatePostByteArray[0])
+	buf.Write(postID)
+	buf.Write(templatePostByteArray[1])
+	buf.Write(createdAt)
+	buf.Write(templatePostByteArray[2])
+	buf.Write(userAccountName)
+	buf.Write(templatePostByteArray[3])
+	buf.Write(userAccountName)
+	buf.Write(templatePostByteArray[4])
+	buf.Write(postID)
+	buf.Write(templatePostByteArray[5])
+	buf.Write(createdAt)
+	buf.Write(templatePostByteArray[6])
+	buf.Write([]byte(imageURL(post)))
+	buf.Write(templatePostByteArray[7])
+	buf.Write(userAccountName)
+	buf.Write(templatePostByteArray[8])
+	buf.Write(userAccountName)
+	buf.Write(templatePostByteArray[9])
+	buf.Write([]byte(post.Body))
+	buf.Write(templatePostByteArray[10])
+	buf.Write([]byte(strconv.Itoa(post.CommentCount)))
+	buf.Write(templatePostByteArray[11])
 
 	// w.Write([]byte(
 	// 	fmt.Sprintf(`
@@ -753,13 +756,13 @@ func templatePost(w io.Writer, post Post) {
 	for _, c := range post.Comments {
 		userAccountName := []byte(c.User.AccountName)
 
-		w.Write(templatePostByteArray[12])
-		w.Write(userAccountName)
-		w.Write(templatePostByteArray[13])
-		w.Write(userAccountName)
-		w.Write(templatePostByteArray[14])
-		w.Write([]byte(c.Comment))
-		w.Write(templatePostByteArray[15])
+		buf.Write(templatePostByteArray[12])
+		buf.Write(userAccountName)
+		buf.Write(templatePostByteArray[13])
+		buf.Write(userAccountName)
+		buf.Write(templatePostByteArray[14])
+		buf.Write([]byte(c.Comment))
+		buf.Write(templatePostByteArray[15])
 		// w.Write([]byte(fmt.Sprintf(`
 		// 	<div class="isu-comment">
 		// 		<a href="/@%s" class="isu-comment-account-name">%s</a>
@@ -772,11 +775,11 @@ func templatePost(w io.Writer, post Post) {
 		// )))
 	}
 
-	w.Write(templatePostByteArray[16])
-	w.Write(postID)
-	w.Write(templatePostByteArray[17])
-	w.Write([]byte(post.CSRFToken))
-	w.Write(templatePostByteArray[18])
+	buf.Write(templatePostByteArray[16])
+	buf.Write(postID)
+	buf.Write(templatePostByteArray[17])
+	buf.Write([]byte(post.CSRFToken))
+	buf.Write(templatePostByteArray[18])
 	// w.Write([]byte(fmt.Sprintf(
 	// 	`<div class="isu-comment-form"> <form method="post" action="/comment"> <input type="text" name="comment">
 	// 	<input type="hidden" name="post_id" value="%d">
@@ -786,6 +789,8 @@ func templatePost(w io.Writer, post Post) {
 	// 	post.ID,
 	// 	post.CSRFToken,
 	// )))
+
+	w.Write(buf.Bytes())
 }
 
 func getAccountName(w http.ResponseWriter, r *http.Request) {
