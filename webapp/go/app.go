@@ -692,7 +692,9 @@ func templatePost(w io.Writer, post Post) {
 	postID := []byte(strconv.Itoa(post.ID))
 	userAccountName := []byte(post.User.AccountName)
 
-	var buf bytes.Buffer
+	// 850はtemplatePostByteArrayの合計サイズ
+	// 1024は適当
+	buf := bytes.NewBuffer(make([]byte, 0, 850 + 1024))
 
 	buf.Write(templatePostByteArray[0])
 	buf.Write(postID)
