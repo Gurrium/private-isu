@@ -792,7 +792,7 @@ func templatePost(w io.Writer, post Post) {
 	// 	post.CSRFToken,
 	// )))
 
-	templatePostBuf.WriteTo(w)
+	buf.WriteTo(w)
 }
 
 func getAccountName(w http.ResponseWriter, r *http.Request) {
