@@ -687,62 +687,38 @@ var templatePostByteArray = [...][]byte{
 	[]byte(`"><input type="submit" name="submit" value="submit"> </form> </div> </div> </div>`),
 }
 
-// 850はtemplatePostByteArrayの合計サイズで1024は適当
-var templatePostBuf = bytes.NewBuffer(make([]byte, 0, 850+1024))
+// 850はtemplatePostByteArrayの合計サイズ
+// 1024は適当
+var	templatePostBuf = bytes.NewBuffer(make([]byte, 0, 850 + 1024))
 
 func templatePost(w io.Writer, post Post) {
 	createdAt := []byte(post.CreatedAt.Format(ISO8601Format))
 	postID := []byte(strconv.Itoa(post.ID))
 	userAccountName := []byte(post.User.AccountName)
 
-	writtenBytes := 0
-
-	n, _ := templatePostBuf.Write(templatePostByteArray[0])
-	writtenBytes += n
-	n, _ = templatePostBuf.Write(postID)
-	writtenBytes += n
-	n, _ = templatePostBuf.Write(templatePostByteArray[1])
-	writtenBytes += n
-	n, _ = templatePostBuf.Write(createdAt)
-	writtenBytes += n
-	n, _ = templatePostBuf.Write(templatePostByteArray[2])
-	writtenBytes += n
-	n, _ = templatePostBuf.Write(userAccountName)
-	writtenBytes += n
-	n, _ = templatePostBuf.Write(templatePostByteArray[3])
-	writtenBytes += n
-	n, _ = templatePostBuf.Write(userAccountName)
-	writtenBytes += n
-	n, _ = templatePostBuf.Write(templatePostByteArray[4])
-	writtenBytes += n
-	n, _ = templatePostBuf.Write(postID)
-	writtenBytes += n
-	n, _ = templatePostBuf.Write(templatePostByteArray[5])
-	writtenBytes += n
-	n, _ = templatePostBuf.Write(createdAt)
-	writtenBytes += n
-	n, _ = templatePostBuf.Write(templatePostByteArray[6])
-	writtenBytes += n
-	n, _ = templatePostBuf.Write([]byte(imageURL(post)))
-	writtenBytes += n
-	n, _ = templatePostBuf.Write(templatePostByteArray[7])
-	writtenBytes += n
-	n, _ = templatePostBuf.Write(userAccountName)
-	writtenBytes += n
-	n, _ = templatePostBuf.Write(templatePostByteArray[8])
-	writtenBytes += n
-	n, _ = templatePostBuf.Write(userAccountName)
-	writtenBytes += n
-	n, _ = templatePostBuf.Write(templatePostByteArray[9])
-	writtenBytes += n
-	n, _ = templatePostBuf.Write([]byte(post.Body))
-	writtenBytes += n
-	n, _ = templatePostBuf.Write(templatePostByteArray[10])
-	writtenBytes += n
-	n, _ = templatePostBuf.Write([]byte(strconv.Itoa(post.CommentCount)))
-	writtenBytes += n
-	n, _ = templatePostBuf.Write(templatePostByteArray[11])
-	writtenBytes += n
+	templatePostBuf.Write(templatePostByteArray[0])
+	templatePostBuf.Write(postID)
+	templatePostBuf.Write(templatePostByteArray[1])
+	templatePostBuf.Write(createdAt)
+	templatePostBuf.Write(templatePostByteArray[2])
+	templatePostBuf.Write(userAccountName)
+	templatePostBuf.Write(templatePostByteArray[3])
+	templatePostBuf.Write(userAccountName)
+	templatePostBuf.Write(templatePostByteArray[4])
+	templatePostBuf.Write(postID)
+	templatePostBuf.Write(templatePostByteArray[5])
+	templatePostBuf.Write(createdAt)
+	templatePostBuf.Write(templatePostByteArray[6])
+	templatePostBuf.Write([]byte(imageURL(post)))
+	templatePostBuf.Write(templatePostByteArray[7])
+	templatePostBuf.Write(userAccountName)
+	templatePostBuf.Write(templatePostByteArray[8])
+	templatePostBuf.Write(userAccountName)
+	templatePostBuf.Write(templatePostByteArray[9])
+	templatePostBuf.Write([]byte(post.Body))
+	templatePostBuf.Write(templatePostByteArray[10])
+	templatePostBuf.Write([]byte(strconv.Itoa(post.CommentCount)))
+	templatePostBuf.Write(templatePostByteArray[11])
 
 	// w.Write([]byte(
 	// 	fmt.Sprintf(`
@@ -782,20 +758,13 @@ func templatePost(w io.Writer, post Post) {
 	for _, c := range post.Comments {
 		userAccountName := []byte(c.User.AccountName)
 
-		n, _ = templatePostBuf.Write(templatePostByteArray[12])
-		writtenBytes += n
-		n, _ = templatePostBuf.Write(userAccountName)
-		writtenBytes += n
-		n, _ = templatePostBuf.Write(templatePostByteArray[13])
-		writtenBytes += n
-		n, _ = templatePostBuf.Write(userAccountName)
-		writtenBytes += n
-		n, _ = templatePostBuf.Write(templatePostByteArray[14])
-		writtenBytes += n
-		n, _ = templatePostBuf.Write([]byte(c.Comment))
-		writtenBytes += n
-		n, _ = templatePostBuf.Write(templatePostByteArray[15])
-		writtenBytes += n
+		templatePostBuf.Write(templatePostByteArray[12])
+		templatePostBuf.Write(userAccountName)
+		templatePostBuf.Write(templatePostByteArray[13])
+		templatePostBuf.Write(userAccountName)
+		templatePostBuf.Write(templatePostByteArray[14])
+		templatePostBuf.Write([]byte(c.Comment))
+		templatePostBuf.Write(templatePostByteArray[15])
 		// w.Write([]byte(fmt.Sprintf(`
 		// 	<div class="isu-comment">
 		// 		<a href="/@%s" class="isu-comment-account-name">%s</a>
@@ -808,16 +777,11 @@ func templatePost(w io.Writer, post Post) {
 		// )))
 	}
 
-	n, _ = templatePostBuf.Write(templatePostByteArray[16])
-	writtenBytes += n
-	n, _ = templatePostBuf.Write(postID)
-	writtenBytes += n
-	n, _ = templatePostBuf.Write(templatePostByteArray[17])
-	writtenBytes += n
-	n, _ = templatePostBuf.Write([]byte(post.CSRFToken))
-	writtenBytes += n
-	n, _ = templatePostBuf.Write(templatePostByteArray[18])
-	writtenBytes += n
+	templatePostBuf.Write(templatePostByteArray[16])
+	templatePostBuf.Write(postID)
+	templatePostBuf.Write(templatePostByteArray[17])
+	templatePostBuf.Write([]byte(post.CSRFToken))
+	templatePostBuf.Write(templatePostByteArray[18])
 	// w.Write([]byte(fmt.Sprintf(
 	// 	`<div class="isu-comment-form"> <form method="post" action="/comment"> <input type="text" name="comment">
 	// 	<input type="hidden" name="post_id" value="%d">
@@ -828,7 +792,6 @@ func templatePost(w io.Writer, post Post) {
 	// 	post.CSRFToken,
 	// )))
 
-	templatePostBuf.Truncate(writtenBytes)
 	templatePostBuf.WriteTo(w)
 	templatePostBuf.Reset()
 }
