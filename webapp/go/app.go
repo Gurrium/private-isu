@@ -687,38 +687,38 @@ var templatePostByteArray = [...][]byte{
 	[]byte(`"><input type="submit" name="submit" value="submit"> </form> </div> </div> </div>`),
 }
 
-// 850はtemplatePostByteArrayの合計サイズ
-// 1024は適当
-var	templatePostBuf = bytes.NewBuffer(make([]byte, 0, 850 + 1024))
-
 func templatePost(w io.Writer, post Post) {
 	createdAt := []byte(post.CreatedAt.Format(ISO8601Format))
 	postID := []byte(strconv.Itoa(post.ID))
 	userAccountName := []byte(post.User.AccountName)
 
-	templatePostBuf.Write(templatePostByteArray[0])
-	templatePostBuf.Write(postID)
-	templatePostBuf.Write(templatePostByteArray[1])
-	templatePostBuf.Write(createdAt)
-	templatePostBuf.Write(templatePostByteArray[2])
-	templatePostBuf.Write(userAccountName)
-	templatePostBuf.Write(templatePostByteArray[3])
-	templatePostBuf.Write(userAccountName)
-	templatePostBuf.Write(templatePostByteArray[4])
-	templatePostBuf.Write(postID)
-	templatePostBuf.Write(templatePostByteArray[5])
-	templatePostBuf.Write(createdAt)
-	templatePostBuf.Write(templatePostByteArray[6])
-	templatePostBuf.Write([]byte(imageURL(post)))
-	templatePostBuf.Write(templatePostByteArray[7])
-	templatePostBuf.Write(userAccountName)
-	templatePostBuf.Write(templatePostByteArray[8])
-	templatePostBuf.Write(userAccountName)
-	templatePostBuf.Write(templatePostByteArray[9])
-	templatePostBuf.Write([]byte(post.Body))
-	templatePostBuf.Write(templatePostByteArray[10])
-	templatePostBuf.Write([]byte(strconv.Itoa(post.CommentCount)))
-	templatePostBuf.Write(templatePostByteArray[11])
+	// 850はtemplatePostByteArrayの合計サイズ
+	// 1024は適当
+	buf := bytes.NewBuffer(make([]byte, 0, 850 + 1024))
+
+	buf.Write(templatePostByteArray[0])
+	buf.Write(postID)
+	buf.Write(templatePostByteArray[1])
+	buf.Write(createdAt)
+	buf.Write(templatePostByteArray[2])
+	buf.Write(userAccountName)
+	buf.Write(templatePostByteArray[3])
+	buf.Write(userAccountName)
+	buf.Write(templatePostByteArray[4])
+	buf.Write(postID)
+	buf.Write(templatePostByteArray[5])
+	buf.Write(createdAt)
+	buf.Write(templatePostByteArray[6])
+	buf.Write([]byte(imageURL(post)))
+	buf.Write(templatePostByteArray[7])
+	buf.Write(userAccountName)
+	buf.Write(templatePostByteArray[8])
+	buf.Write(userAccountName)
+	buf.Write(templatePostByteArray[9])
+	buf.Write([]byte(post.Body))
+	buf.Write(templatePostByteArray[10])
+	buf.Write([]byte(strconv.Itoa(post.CommentCount)))
+	buf.Write(templatePostByteArray[11])
 
 	// w.Write([]byte(
 	// 	fmt.Sprintf(`
@@ -758,13 +758,13 @@ func templatePost(w io.Writer, post Post) {
 	for _, c := range post.Comments {
 		userAccountName := []byte(c.User.AccountName)
 
-		templatePostBuf.Write(templatePostByteArray[12])
-		templatePostBuf.Write(userAccountName)
-		templatePostBuf.Write(templatePostByteArray[13])
-		templatePostBuf.Write(userAccountName)
-		templatePostBuf.Write(templatePostByteArray[14])
-		templatePostBuf.Write([]byte(c.Comment))
-		templatePostBuf.Write(templatePostByteArray[15])
+		buf.Write(templatePostByteArray[12])
+		buf.Write(userAccountName)
+		buf.Write(templatePostByteArray[13])
+		buf.Write(userAccountName)
+		buf.Write(templatePostByteArray[14])
+		buf.Write([]byte(c.Comment))
+		buf.Write(templatePostByteArray[15])
 		// w.Write([]byte(fmt.Sprintf(`
 		// 	<div class="isu-comment">
 		// 		<a href="/@%s" class="isu-comment-account-name">%s</a>
@@ -777,11 +777,11 @@ func templatePost(w io.Writer, post Post) {
 		// )))
 	}
 
-	templatePostBuf.Write(templatePostByteArray[16])
-	templatePostBuf.Write(postID)
-	templatePostBuf.Write(templatePostByteArray[17])
-	templatePostBuf.Write([]byte(post.CSRFToken))
-	templatePostBuf.Write(templatePostByteArray[18])
+	buf.Write(templatePostByteArray[16])
+	buf.Write(postID)
+	buf.Write(templatePostByteArray[17])
+	buf.Write([]byte(post.CSRFToken))
+	buf.Write(templatePostByteArray[18])
 	// w.Write([]byte(fmt.Sprintf(
 	// 	`<div class="isu-comment-form"> <form method="post" action="/comment"> <input type="text" name="comment">
 	// 	<input type="hidden" name="post_id" value="%d">
@@ -792,8 +792,7 @@ func templatePost(w io.Writer, post Post) {
 	// 	post.CSRFToken,
 	// )))
 
-	w.Write(templatePostBuf.Bytes())
-	templatePostBuf.Reset()
+	templatePostBuf.WriteTo(w)
 }
 
 func getAccountName(w http.ResponseWriter, r *http.Request) {
