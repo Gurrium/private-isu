@@ -694,6 +694,7 @@ func templatePost(w io.Writer, post Post) {
 	cached, err := cache.Get(cacheKey)
 	if err == nil {
 		w.Write(cached)
+		return
 	} else if err == freecache.ErrNotFound {
 		createdAt := []byte(post.CreatedAt.Format(ISO8601Format))
 		postID := []byte(strconv.Itoa(post.ID))
@@ -783,6 +784,8 @@ func templatePost(w io.Writer, post Post) {
 		buf.Write(templatePostByteArray[16])
 		buf.Write(postID)
 		buf.Write(templatePostByteArray[17])
+		buf.Write([]byte(post.CSRFToken))
+		buf.Write(templatePostByteArray[18])
 		// w.Write([]byte(fmt.Sprintf(
 		// 	`<div class="isu-comment-form"> <form method="post" action="/comment"> <input type="text" name="comment">
 		// 	<input type="hidden" name="post_id" value="%d">
@@ -796,13 +799,11 @@ func templatePost(w io.Writer, post Post) {
 		bytes := buf.Bytes()
 		w.Write(bytes)
 		cache.Set(cacheKey, bytes, 10)
+		return
 	} else {
 		log.Print(err)
 		return
 	}
-
-	w.Write([]byte(post.CSRFToken))
-	w.Write(templatePostByteArray[18])
 }
 
 func getAccountName(w http.ResponseWriter, r *http.Request) {
