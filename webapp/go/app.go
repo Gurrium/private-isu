@@ -689,7 +689,7 @@ var templatePostByteArray = [...][]byte{
 
 func templatePost(w io.Writer, post Post) {
 	cacheKey := []byte(fmt.Sprintf("template_post_%d", post.ID))
-	buf := bytes.NewBuffer(make([]byte, 0, 850+1024))
+	buf := bytes.NewBuffer(make([]byte, 0, 850+512))
 
 	cached, err := cache.Get(cacheKey)
 	if err == nil {
