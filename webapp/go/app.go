@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	crand "crypto/rand"
 	"crypto/sha512"
 	"fmt"
@@ -695,105 +696,124 @@ var templatePostByteArray = [...][]byte{
 }
 
 func templatePost(w io.Writer, post Post) {
-	createdAt := []byte(post.CreatedAt.Format(ISO8601Format))
-	postID := []byte(strconv.Itoa(post.ID))
-	userAccountName := []byte(post.User.AccountName)
+	cacheKey := []byte(fmt.Sprintf("template_post_%d", post.ID))
+	buf := bytes.NewBuffer(make([]byte, 0, 850+1024))
 
-	w.Write(templatePostByteArray[0])
-	w.Write(postID)
-	w.Write(templatePostByteArray[1])
-	w.Write(createdAt)
-	w.Write(templatePostByteArray[2])
-	w.Write(userAccountName)
-	w.Write(templatePostByteArray[3])
-	w.Write(userAccountName)
-	w.Write(templatePostByteArray[4])
-	w.Write(postID)
-	w.Write(templatePostByteArray[5])
-	w.Write(createdAt)
-	w.Write(templatePostByteArray[6])
-	w.Write([]byte(imageURL(post)))
-	w.Write(templatePostByteArray[7])
-	w.Write(userAccountName)
-	w.Write(templatePostByteArray[8])
-	w.Write(userAccountName)
-	w.Write(templatePostByteArray[9])
-	w.Write([]byte(post.Body))
-	w.Write(templatePostByteArray[10])
-	w.Write([]byte(strconv.Itoa(post.CommentCount)))
-	w.Write(templatePostByteArray[11])
+	cached, err := cache.Get(cacheKey)
+	if err == nil {
+		log.Print("cache hit")
+		w.Write(cached)
+		return
+	} else if err == freecache.ErrNotFound {
+		log.Print("cache miss")
+		createdAt := []byte(post.CreatedAt.Format(ISO8601Format))
+		postID := []byte(strconv.Itoa(post.ID))
+		userAccountName := []byte(post.User.AccountName)
 
-	// w.Write([]byte(
-	// 	fmt.Sprintf(`
-	// 		<div class="isu-post" id="pid_%d" data-created-at="%s">
-	// 			<div class="isu-post-header">
-	// 				<a href="/@%s" class="isu-post-account-name">%s</a>
-	// 				<a href="/posts/%d" class="isu-post-permalink">
-	// 				<time class="timeago" datetime="%s"></time>
-	// 				</a>
-	// 			</div>
-	// 			<div class="isu-post-image">
-	// 				<img src="%s" class="isu-image">
-	// 			</div>
-	// 			<div class="isu-post-text">
-	// 				<a href="/@%s" class="isu-post-account-name">%s</a>
-	// 				%s
-	// 			</div>
-	// 			<div class="isu-post-comment">
-	// 				<div class="isu-post-comment-count">
-	// 				comments: <b>%d</b>
-	// 		</div>
-	// 		`,
-	// 		post.ID,
-	// 		createdAt,
-	// 		post.User.AccountName,
-	// 		post.User.AccountName,
-	// 		post.ID,
-	// 		createdAt,
-	// 		imageURL(post),
-	// 		post.User.AccountName,
-	// 		post.User.AccountName,
-	// 		post.Body,
-	// 		post.CommentCount,
-	// 	),
-	// ))
+		buf.Write(templatePostByteArray[0])
+		buf.Write(postID)
+		buf.Write(templatePostByteArray[1])
+		buf.Write(createdAt)
+		buf.Write(templatePostByteArray[2])
+		buf.Write(userAccountName)
+		buf.Write(templatePostByteArray[3])
+		buf.Write(userAccountName)
+		buf.Write(templatePostByteArray[4])
+		buf.Write(postID)
+		buf.Write(templatePostByteArray[5])
+		buf.Write(createdAt)
+		buf.Write(templatePostByteArray[6])
+		buf.Write([]byte(imageURL(post)))
+		buf.Write(templatePostByteArray[7])
+		buf.Write(userAccountName)
+		buf.Write(templatePostByteArray[8])
+		buf.Write(userAccountName)
+		buf.Write(templatePostByteArray[9])
+		buf.Write([]byte(post.Body))
+		buf.Write(templatePostByteArray[10])
+		buf.Write([]byte(strconv.Itoa(post.CommentCount)))
+		buf.Write(templatePostByteArray[11])
 
-	for _, c := range post.Comments {
-		userAccountName := []byte(c.User.AccountName)
+		// w.Write([]byte(
+		// 	fmt.Sprintf(`
+		// 		<div class="isu-post" id="pid_%d" data-created-at="%s">
+		// 			<div class="isu-post-header">
+		// 				<a href="/@%s" class="isu-post-account-name">%s</a>
+		// 				<a href="/posts/%d" class="isu-post-permalink">
+		// 				<time class="timeago" datetime="%s"></time>
+		// 				</a>
+		// 			</div>
+		// 			<div class="isu-post-image">
+		// 				<img src="%s" class="isu-image">
+		// 			</div>
+		// 			<div class="isu-post-text">
+		// 				<a href="/@%s" class="isu-post-account-name">%s</a>
+		// 				%s
+		// 			</div>
+		// 			<div class="isu-post-comment">
+		// 				<div class="isu-post-comment-count">
+		// 				comments: <b>%d</b>
+		// 		</div>
+		// 		`,
+		// 		post.ID,
+		// 		createdAt,
+		// 		post.User.AccountName,
+		// 		post.User.AccountName,
+		// 		post.ID,
+		// 		createdAt,
+		// 		imageURL(post),
+		// 		post.User.AccountName,
+		// 		post.User.AccountName,
+		// 		post.Body,
+		// 		post.CommentCount,
+		// 	),
+		// ))
 
-		w.Write(templatePostByteArray[12])
-		w.Write(userAccountName)
-		w.Write(templatePostByteArray[13])
-		w.Write(userAccountName)
-		w.Write(templatePostByteArray[14])
-		w.Write([]byte(c.Comment))
-		w.Write(templatePostByteArray[15])
-		// w.Write([]byte(fmt.Sprintf(`
-		// 	<div class="isu-comment">
-		// 		<a href="/@%s" class="isu-comment-account-name">%s</a>
-		// 		<span class="isu-comment-text">%s</span>
-		// 	</div>
+		for _, c := range post.Comments {
+			userAccountName := []byte(c.User.AccountName)
+
+			buf.Write(templatePostByteArray[12])
+			buf.Write(userAccountName)
+			buf.Write(templatePostByteArray[13])
+			buf.Write(userAccountName)
+			buf.Write(templatePostByteArray[14])
+			buf.Write([]byte(c.Comment))
+			buf.Write(templatePostByteArray[15])
+			// w.Write([]byte(fmt.Sprintf(`
+			// 	<div class="isu-comment">
+			// 		<a href="/@%s" class="isu-comment-account-name">%s</a>
+			// 		<span class="isu-comment-text">%s</span>
+			// 	</div>
+			// 	`,
+			// 	c.User.AccountName,
+			// 	c.User.AccountName,
+			// 	c.Comment,
+			// )))
+		}
+
+		buf.Write(templatePostByteArray[16])
+		buf.Write(postID)
+		buf.Write(templatePostByteArray[17])
+		buf.Write([]byte(post.CSRFToken))
+		buf.Write(templatePostByteArray[18])
+		// w.Write([]byte(fmt.Sprintf(
+		// 	`<div class="isu-comment-form"> <form method="post" action="/comment"> <input type="text" name="comment">
+		// 	<input type="hidden" name="post_id" value="%d">
+		// 	<input type="hidden" name="csrf_token" value="%s">
+		// 	<input type="submit" name="submit" value="submit"> </form> </div> </div> </div>
 		// 	`,
-		// 	c.User.AccountName,
-		// 	c.User.AccountName,
-		// 	c.Comment,
+		// 	post.ID,
+		// 	post.CSRFToken,
 		// )))
-	}
 
-	w.Write(templatePostByteArray[16])
-	w.Write(postID)
-	w.Write(templatePostByteArray[17])
-	w.Write([]byte(post.CSRFToken))
-	w.Write(templatePostByteArray[18])
-	// w.Write([]byte(fmt.Sprintf(
-	// 	`<div class="isu-comment-form"> <form method="post" action="/comment"> <input type="text" name="comment">
-	// 	<input type="hidden" name="post_id" value="%d">
-	// 	<input type="hidden" name="csrf_token" value="%s">
-	// 	<input type="submit" name="submit" value="submit"> </form> </div> </div> </div>
-	// 	`,
-	// 	post.ID,
-	// 	post.CSRFToken,
-	// )))
+		bytes := buf.Bytes()
+		w.Write(bytes)
+		cache.Set(cacheKey, bytes, 10)
+		return
+	} else {
+		log.Print(err)
+		return
+	}
 }
 
 func getAccountName(w http.ResponseWriter, r *http.Request) {
@@ -1207,6 +1227,7 @@ func postComment(w http.ResponseWriter, r *http.Request) {
 	cache.Del([]byte(fmt.Sprintf("comment_count_%d", postID)))
 	cache.Del([]byte(fmt.Sprintf("comments_%d_%t", postID, true)))
 	cache.Del([]byte(fmt.Sprintf("comments_%d_%t", postID, false)))
+	cache.Del([]byte(fmt.Sprintf("template_post_%d", postID)))
 
 	flag := 0
 	err = db.Get(
