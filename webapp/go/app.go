@@ -81,7 +81,7 @@ func init() {
 	}
 	memcacheClient := m.New(memdAddr)
 	store = gsm.NewMemcacheStore(memcacheClient, "iscogram_", []byte("sendagaya"))
-	cache = freecache.NewCache(10 * 1024 * 1024)
+	cache = freecache.NewCache(50 * 1024 * 1024)
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 }
 
@@ -521,7 +521,7 @@ var postsKey = []byte("posts")
 func getIndex(w http.ResponseWriter, r *http.Request) {
 	me := getSessionUser(r)
 
-	results := []Post{}
+	results := make([]Post, 0, 20)
 
 	cachedIndexPosts, err := cache.Get(postsKey)
 	if err == nil {
@@ -531,6 +531,8 @@ func getIndex(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else if err == freecache.ErrNotFound {
+		tempResults := make([]Post, 0, 20)
+
 		query := `
 		SELECT posts.id, posts.body, posts.mime, posts.created_at,
 		users.account_name AS "users.account_name", users.authority AS "users.authority"
@@ -548,20 +550,19 @@ func getIndex(w http.ResponseWriter, r *http.Request) {
 		}
 
 		query = db.Rebind(query)
-		err = db.Select(&results, query, args...)
-		if err != nil {
-			log.Print(err)
-			return
-		}
-		// !!! IMPORTANT !!!
-		// 後でCSRFトークンを埋めること
-		posts, err := makePosts(results, "", false)
+		err = db.Select(&tempResults, query, args...)
 		if err != nil {
 			log.Print(err)
 			return
 		}
 
-		b, err := sonnet.Marshal(posts)
+		results, err = makePosts(tempResults, "", false)
+		if err != nil {
+			log.Print(err)
+			return
+		}
+
+		b, err := sonnet.Marshal(results)
 		if err != nil {
 			log.Print(err)
 			return
@@ -578,7 +579,7 @@ func getIndex(w http.ResponseWriter, r *http.Request) {
 	}
 
 	csrfToken := getCSRFToken(r)
-	posts := make([]Post, 0, len(results))
+	posts := make([]Post, 0, 20)
 	for _, p := range results {
 		p.CSRFToken = csrfToken
 		posts = append(posts, p)
