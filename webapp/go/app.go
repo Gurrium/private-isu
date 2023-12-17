@@ -553,8 +553,15 @@ func getIndex(w http.ResponseWriter, r *http.Request) {
 			log.Print(err)
 			return
 		}
+		// !!! IMPORTANT !!!
+		// 後でCSRFトークンを埋めること
+		posts, err := makePosts(results, "", false)
+		if err != nil {
+			log.Print(err)
+			return
+		}
 
-		b, err := sonnet.Marshal(results)
+		b, err := sonnet.Marshal(posts)
 		if err != nil {
 			log.Print(err)
 			return
@@ -570,14 +577,14 @@ func getIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	posts, err := makePosts(results, getCSRFToken(r), false)
-	if err != nil {
-		log.Print(err)
-		return
+	csrfToken := getCSRFToken(r)
+	posts := make([]Post, 0, len(results))
+	for _, p := range results {
+		p.CSRFToken = csrfToken
+		posts = append(posts, p)
 	}
 
 	flash := getFlash(w, r, "notice")
-	csrfToken := getCSRFToken(r)
 
 	templateLayout(
 		w,
