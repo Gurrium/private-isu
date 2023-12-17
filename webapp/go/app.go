@@ -693,11 +693,9 @@ func templatePost(w io.Writer, post Post) {
 
 	cached, err := cache.Get(cacheKey)
 	if err == nil {
-		log.Print("cache hit")
 		w.Write(cached)
 		return
 	} else if err == freecache.ErrNotFound {
-		log.Print("cache miss")
 		createdAt := []byte(post.CreatedAt.Format(ISO8601Format))
 		postID := []byte(strconv.Itoa(post.ID))
 		userAccountName := []byte(post.User.AccountName)
