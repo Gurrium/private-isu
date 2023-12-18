@@ -108,37 +108,17 @@ func dbInitialize() {
 
 func tryLogin(accountName, password string) *User {
 	u := User{}
+	query := "SELECT * FROM users WHERE account_name = ? AND id NOT IN (?)"
 
-	cacheKey := []byte(fmt.Sprintf("login_%s", accountName))
-	cached, err := cache.Get(cacheKey)
-	if err == nil {
-		err := sonnet.Unmarshal(cached, &u)
-		if err != nil {
-			log.Print(err)
-			return nil
-		}
-
-		for _, deletedUserID := range deletedUserIDs {
-			if u.ID == deletedUserID {
-				return nil
-			}
-		}
-	} else if err == freecache.ErrNotFound {
-		query := "SELECT * FROM users WHERE account_name = ? AND id NOT IN (?)"
-
-		query, args, err := sqlx.In(query, accountName, deletedUserIDs)
-		if err != nil {
-			log.Print(err)
-			return nil
-		}
-
-		query = db.Rebind(query)
-		err = db.Get(&u, query, args...)
-		if err != nil {
-			return nil
-		}
-	} else {
+	query, args, err := sqlx.In(query, accountName, deletedUserIDs)
+	if err != nil {
 		log.Print(err)
+		return nil
+	}
+
+	query = db.Rebind(query)
+	err = db.Get(&u, query, args...)
+	if err != nil {
 		return nil
 	}
 
@@ -503,9 +483,8 @@ func postRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	passhash := calculatePasshash(accountName, password)
 	query := "INSERT INTO users (account_name, passhash) VALUES (?,?)"
-	result, err := db.Exec(query, accountName, passhash)
+	result, err := db.Exec(query, accountName, calculatePasshash(accountName, password))
 	if err != nil {
 		log.Print(err)
 		return
@@ -522,24 +501,6 @@ func postRegister(w http.ResponseWriter, r *http.Request) {
 	session.Values["authority"] = 0
 	session.Values["csrf_token"] = secureRandomStr(16)
 	session.Save(r, w)
-
-	cacheKey := []byte(fmt.Sprintf("login_%s", accountName))
-	user := User{
-		ID:          int(uid),
-		AccountName: accountName,
-		Passhash:    passhash,
-		Authority:   0,
-	}
-	b, err := sonnet.Marshal(user)
-	if err != nil {
-		log.Print(err)
-		return
-	}
-	err = cache.Set(cacheKey, b, 5)
-	if err != nil {
-		log.Print(err)
-		return
-	}
 
 	http.Redirect(w, r, "/", http.StatusFound)
 }
