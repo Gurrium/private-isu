@@ -987,8 +987,19 @@ func getPostsID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	results := []Post{}
-	query := `
+	cacheKey := []byte(fmt.Sprintf("get_posts_id_%d", pid))
+	var post Post
+
+	cached, err := cache.Get(cacheKey)
+	if err == nil {
+		err := sonnet.Unmarshal(cached, &post)
+		if err != nil {
+			log.Print(err)
+			return
+		}
+	} else if err == freecache.ErrNotFound {
+		results := []Post{}
+		query := `
 		SELECT posts.id, posts.user_id, posts.body, posts.mime, posts.created_at,
 		 users.id AS "users.id", users.account_name AS "users.account_name", users.authority AS "users.authority", users.created_at AS "users.created_at"
 		FROM posts 
@@ -996,31 +1007,49 @@ func getPostsID(w http.ResponseWriter, r *http.Request) {
 		WHERE posts.id = ? AND users.id NOT IN (?)
 		`
 
-	query, args, err := sqlx.In(query, pid, deletedUserIDs)
-	if err != nil {
+		query, args, err := sqlx.In(query, pid, deletedUserIDs)
+		if err != nil {
+			log.Print(err)
+			return
+		}
+
+		query = db.Rebind(query)
+		err = db.Select(&results, query, args...)
+		if err != nil {
+			log.Print(err)
+			return
+		}
+
+		posts, err := makePosts(results, "", true)
+		if err != nil {
+			log.Print(err)
+			return
+		}
+
+		if len(posts) == 0 {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+
+		post = posts[0]
+
+		b, err := sonnet.Marshal(post)
+		if err != nil {
+			log.Print(err)
+			return
+		}
+
+		err = cache.Set(cacheKey, b, 10)
+		if err != nil {
+			log.Print(err)
+			return
+		}
+	} else {
 		log.Print(err)
 		return
 	}
 
-	query = db.Rebind(query)
-	err = db.Select(&results, query, args...)
-	if err != nil {
-		log.Print(err)
-		return
-	}
-
-	posts, err := makePosts(results, getCSRFToken(r), true)
-	if err != nil {
-		log.Print(err)
-		return
-	}
-
-	if len(posts) == 0 {
-		w.WriteHeader(http.StatusNotFound)
-		return
-	}
-
-	p := posts[0]
+	post.CSRFToken = getCSRFToken(r)
 
 	me := getSessionUser(r)
 
@@ -1028,7 +1057,7 @@ func getPostsID(w http.ResponseWriter, r *http.Request) {
 		w,
 		me,
 		func(w io.Writer) {
-			templatePostID(w, p)
+			templatePostID(w, post)
 		},
 	)
 }
@@ -1225,6 +1254,7 @@ func postComment(w http.ResponseWriter, r *http.Request) {
 	cache.Del([]byte(fmt.Sprintf("comments_%d_%t", postID, true)))
 	cache.Del([]byte(fmt.Sprintf("comments_%d_%t", postID, false)))
 	cache.Del([]byte(fmt.Sprintf("template_post_%d", postID)))
+	cache.Del([]byte(fmt.Sprintf("get_posts_id_%d", postID)))
 
 	flag := 0
 	err = db.Get(
