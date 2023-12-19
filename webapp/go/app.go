@@ -17,12 +17,10 @@ import (
 	"strings"
 	"time"
 
-	m "github.com/bradfitz/gomemcache/memcache"
-	gsm "github.com/bradleypeabody/gorilla-sessions-memcache"
+	"github.com/alexedwards/scs/v2"
 	"github.com/coocood/freecache"
 	"github.com/go-chi/chi/v5"
 	_ "github.com/go-sql-driver/mysql"
-	"github.com/gorilla/sessions"
 	"github.com/jmoiron/sqlx"
 	"github.com/sugawarayuuta/sonnet"
 
@@ -32,7 +30,7 @@ import (
 
 var (
 	db             *sqlx.DB
-	store          *gsm.MemcacheStore
+	sessionManager *scs.SessionManager
 	deletedUserIDs []int
 	cache          *freecache.Cache
 )
@@ -75,12 +73,7 @@ type Comment struct {
 }
 
 func init() {
-	memdAddr := os.Getenv("ISUCONP_MEMCACHED_ADDRESS")
-	if memdAddr == "" {
-		memdAddr = "localhost:11211"
-	}
-	memcacheClient := m.New(memdAddr)
-	store = gsm.NewMemcacheStore(memcacheClient, "iscogram_", []byte("sendagaya"))
+	sessionManager = scs.New()
 	cache = freecache.NewCache(50 * 1024 * 1024)
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 }
@@ -148,42 +141,39 @@ func calculatePasshash(accountName, password string) string {
 	return digest(password + ":" + calculateSalt(accountName))
 }
 
-func getSession(r *http.Request) *sessions.Session {
-	session, _ := store.Get(r, "isuconp-go.session")
+type Session struct {
+	UserID      int
+	AccountName string
+	Authority   int
+	CSRFToken   string
+}
+
+func getSession(r *http.Request) *Session {
+	bytes := sessionManager.GetBytes(r.Context(), "isuconp-go.session")
+	session := &Session{}
+	sonnet.Unmarshal(bytes, session)
 
 	return session
 }
 
 func getSessionUser(r *http.Request) User {
 	session := getSession(r)
-	uid, ok := session.Values["user_id"]
-	if !ok || uid == nil {
-		return User{}
-	}
+	uid := session.UserID
 
-	accountName := session.Values["account_name"]
-	authority := session.Values["authority"]
+	accountName := session.AccountName
+	authority := session.Authority
 
 	u := User{
-		ID:          uid.(int),
-		AccountName: accountName.(string),
-		Authority:   authority.(int),
+		ID:          uid,
+		AccountName: accountName,
+		Authority:   authority,
 	}
 
 	return u
 }
 
 func getFlash(w http.ResponseWriter, r *http.Request, key string) string {
-	session := getSession(r)
-	value, ok := session.Values[key]
-
-	if !ok || value == nil {
-		return ""
-	} else {
-		delete(session.Values, key)
-		session.Save(r, w)
-		return value.(string)
-	}
+	return sessionManager.PopString(r.Context(), key)
 }
 
 type SimpleComment struct {
@@ -370,11 +360,7 @@ func isLogin(u User) bool {
 
 func getCSRFToken(r *http.Request) string {
 	session := getSession(r)
-	csrfToken, ok := session.Values["csrf_token"]
-	if !ok {
-		return ""
-	}
-	return csrfToken.(string)
+	return session.CSRFToken
 }
 
 func secureRandomStr(b int) string {
@@ -420,18 +406,24 @@ func postLogin(w http.ResponseWriter, r *http.Request) {
 	u := tryLogin(r.FormValue("account_name"), r.FormValue("password"))
 
 	if u != nil {
-		session := getSession(r)
-		session.Values["user_id"] = u.ID
-		session.Values["account_name"] = u.AccountName
-		session.Values["authority"] = u.Authority
-		session.Values["csrf_token"] = secureRandomStr(16)
-		session.Save(r, w)
+		session := Session{
+			UserID:      u.ID,
+			AccountName: u.AccountName,
+			Authority:   u.Authority,
+			CSRFToken:   secureRandomStr(16),
+		}
+
+		b, err := sonnet.Marshal(session)
+		if err != nil {
+			log.Print(err)
+			return
+		}
+
+		sessionManager.Put(r.Context(), "isuconp-go.session", b)
 
 		http.Redirect(w, r, "/", http.StatusFound)
 	} else {
-		session := getSession(r)
-		session.Values["notice"] = "アカウント名かパスワードが間違っています"
-		session.Save(r, w)
+		sessionManager.Put(r.Context(), "notice", "アカウント名かパスワードが間違っています")
 
 		http.Redirect(w, r, "/login", http.StatusFound)
 	}
@@ -462,9 +454,7 @@ func postRegister(w http.ResponseWriter, r *http.Request) {
 
 	validated := validateUser(accountName, password)
 	if !validated {
-		session := getSession(r)
-		session.Values["notice"] = "アカウント名は3文字以上、パスワードは6文字以上である必要があります"
-		session.Save(r, w)
+		sessionManager.Put(r.Context(), "notice", "アカウント名は3文字以上、パスワードは6文字以上である必要があります")
 
 		http.Redirect(w, r, "/register", http.StatusFound)
 		return
@@ -475,9 +465,7 @@ func postRegister(w http.ResponseWriter, r *http.Request) {
 	db.Get(&exists, "SELECT 1 FROM users WHERE account_name = ?", accountName)
 
 	if exists == 1 {
-		session := getSession(r)
-		session.Values["notice"] = "アカウント名がすでに使われています"
-		session.Save(r, w)
+		sessionManager.Put(r.Context(), "notice", "アカウント名がすでに使われています")
 
 		http.Redirect(w, r, "/register", http.StatusFound)
 		return
@@ -490,28 +478,31 @@ func postRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	session := getSession(r)
 	uid, err := result.LastInsertId()
 	if err != nil {
 		log.Print(err)
 		return
 	}
-	session.Values["user_id"] = int(uid)
-	session.Values["account_name"] = accountName
-	session.Values["authority"] = 0
-	session.Values["csrf_token"] = secureRandomStr(16)
-	session.Save(r, w)
+	session := Session{
+		UserID:      int(uid),
+		AccountName: accountName,
+		Authority:   0,
+		CSRFToken:   secureRandomStr(16),
+	}
+
+	b, err := sonnet.Marshal(session)
+	if err != nil {
+		log.Print(err)
+		return
+	}
+
+	sessionManager.Put(r.Context(), "isuconp-go.session", b)
 
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 
 func getLogout(w http.ResponseWriter, r *http.Request) {
-	session := getSession(r)
-	delete(session.Values, "user_id")
-	delete(session.Values, "account_name")
-	delete(session.Values, "authority")
-	session.Options = &sessions.Options{MaxAge: -1}
-	session.Save(r, w)
+	sessionManager.Remove(r.Context(), "isuconp-go.session")
 
 	http.Redirect(w, r, "/", http.StatusFound)
 }
@@ -1063,9 +1054,7 @@ func postIndex(w http.ResponseWriter, r *http.Request) {
 
 	file, header, err := r.FormFile("file")
 	if err != nil {
-		session := getSession(r)
-		session.Values["notice"] = "画像が必須です"
-		session.Save(r, w)
+		sessionManager.Put(r.Context(), "notice", "画像が必須です")
 
 		http.Redirect(w, r, "/", http.StatusFound)
 		return
@@ -1086,9 +1075,7 @@ func postIndex(w http.ResponseWriter, r *http.Request) {
 			mime = "image/gif"
 			ext = "gif"
 		} else {
-			session := getSession(r)
-			session.Values["notice"] = "投稿できる画像形式はjpgとpngとgifだけです"
-			session.Save(r, w)
+		sessionManager.Put(r.Context(), "notice", "投稿できる画像形式はjpgとpngとgifだけです")
 
 			http.Redirect(w, r, "/", http.StatusFound)
 			return
@@ -1102,9 +1089,7 @@ func postIndex(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(filedata) > UploadLimit {
-		session := getSession(r)
-		session.Values["notice"] = "ファイルサイズが大きすぎます"
-		session.Save(r, w)
+		sessionManager.Put(r.Context(), "notice", "ファイルサイズが大きすぎます")
 
 		http.Redirect(w, r, "/", http.StatusFound)
 		return
@@ -1412,6 +1397,8 @@ func main() {
 	defer db.Close()
 
 	r := chi.NewRouter()
+
+	r.Use(sessionManager.LoadAndSave)
 
 	r.Get("/initialize", getInitialize)
 	r.Get("/login", getLogin)
