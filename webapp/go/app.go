@@ -1396,12 +1396,6 @@ func main() {
 	}
 	defer db.Close()
 
-	maxOpenConns := 10
-	db.SetMaxOpenConns(maxOpenConns)
-	db.SetMaxIdleConns(maxOpenConns)
-	db.SetConnMaxLifetime(time.Second * time.Duration(maxOpenConns))
-	db.SetConnMaxIdleTime(time.Second * time.Duration(maxOpenConns))
-
 	r := chi.NewRouter()
 
 	r.Use(sessionManager.LoadAndSave)
