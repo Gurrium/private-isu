@@ -408,24 +408,20 @@ func getLogout(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 
-var postsKey = []byte("posts")
+var (
+	postM     sync.Mutex
+	postStore []Post = make([]Post, 0, postsPerPage+1)
+)
 
-func getIndex(w http.ResponseWriter, r *http.Request) {
-	me := getSessionUser(r)
+func getIndexPostsLocked(forceUpdate bool) []Post {
+	// 初期データの時点でpostsPerPage以上あるのは確定
+	if len(postStore) >= postsPerPage && !forceUpdate {
+		return postStore
+	}
 
-	results := make([]Post, 0, 20)
+	ps := make([]Post, 0, postsPerPage)
 
-	cachedIndexPosts, err := cache.Get(postsKey)
-	if err == nil {
-		err := sonnet.Unmarshal(cachedIndexPosts, &results)
-		if err != nil {
-			log.Print(err)
-			return
-		}
-	} else if err == freecache.ErrNotFound {
-		tempResults := make([]Post, 0, 20)
-
-		query := `
+	query := `
 		SELECT posts.id, posts.body, posts.mime, posts.created_at,
 		users.account_name AS "users.account_name", users.authority AS "users.authority"
 		FROM posts
@@ -435,40 +431,48 @@ func getIndex(w http.ResponseWriter, r *http.Request) {
 		LIMIT ?
 		`
 
-		query, args, err := sqlx.In(query, deletedUserIDs, postsPerPage)
-		if err != nil {
-			log.Print(err)
-			return
-		}
-
-		query = db.Rebind(query)
-		err = db.Select(&tempResults, query, args...)
-		if err != nil {
-			log.Print(err)
-			return
-		}
-
-		results, err = makePosts(tempResults, "", false)
-		if err != nil {
-			log.Print(err)
-			return
-		}
-
-		b, err := sonnet.Marshal(results)
-		if err != nil {
-			log.Print(err)
-			return
-		}
-
-		err = cache.Set(postsKey, b, 5)
-		if err != nil {
-			log.Print(err)
-			return
-		}
-	} else {
+	query, args, err := sqlx.In(query, deletedUserIDs, postsPerPage)
+	if err != nil {
 		log.Print(err)
-		return
+		return []Post{}
 	}
+
+	query = db.Rebind(query)
+	err = db.Select(&ps, query, args...)
+	if err != nil {
+		log.Print(err)
+		return []Post{}
+	}
+
+	results, err := makePosts(ps, "", false)
+	if err != nil {
+		log.Print(err)
+		return []Post{}
+	}
+
+	postStore = results
+	return results
+}
+
+func getIndexPosts() []Post {
+	postM.Lock()
+	defer postM.Unlock()
+
+	return getIndexPostsLocked(false)
+}
+
+func appendPost(p Post) {
+	postM.Lock()
+	defer postM.Unlock()
+
+	ps := getIndexPostsLocked(false)
+	postStore = append([]Post{p}, ps...)
+}
+
+func getIndex(w http.ResponseWriter, r *http.Request) {
+	me := getSessionUser(r)
+
+	results := getIndexPosts()
 
 	csrfToken := getCSRFToken(r)
 	posts := make([]Post, 0, 20)
@@ -996,20 +1000,13 @@ func postIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	query := "INSERT INTO posts (user_id, mime, imgdata, body) VALUES (?,?,?,?)"
-	result, err := db.Exec(
-		query,
-		me.ID,
-		mime,
-		[]byte(""),
-		r.FormValue("body"),
-	)
-	if err != nil {
-		log.Print(err)
-		return
-	}
+	// isnert into posts and return newly created post
+	query := "INSERT INTO posts (user_id, body, mime, imgdata) VALUES (?,?,?,?) RETURNING posts.id, posts.created_at"
+	row := db.QueryRow(query, me.ID, r.FormValue("body"), mime, filedata)
 
-	pid, err := result.LastInsertId()
+	var pid int64
+	var createdAt time.Time
+	err = row.Scan(&pid, &createdAt)
 	if err != nil {
 		log.Print(err)
 		return
@@ -1029,7 +1026,15 @@ func postIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cache.Del(postsKey)
+	appendPost(
+		Post{
+			ID:        int(pid),
+			User:      me,
+			Body:      r.FormValue("body"),
+			Mime:      mime,
+			CreatedAt: createdAt,
+		},
+	)
 
 	http.Redirect(w, r, "/posts/"+strconv.FormatInt(pid, 10), http.StatusFound)
 }
@@ -1129,28 +1134,7 @@ func postComment(w http.ResponseWriter, r *http.Request) {
 
 	cache.Del([]byte(fmt.Sprintf("get_posts_id_%d", postID)))
 
-	flag := 0
-	err = db.Get(
-		&flag,
-		`
-		WITH recent_posts AS (
-		SELECT id FROM posts
-		ORDER BY created_at DESC
-		LIMIT 20
-		)
-		SELECT COUNT(*) FROM recent_posts
-		WHERE id = ?
-		`,
-		postID,
-	)
-	if err != nil {
-		log.Print(err)
-		return
-	}
-
-	if flag == 1 {
-		cache.Del(postsKey)
-	}
+	getIndexPostsLocked(true)
 
 	http.Redirect(w, r, fmt.Sprintf("/posts/%d", postID), http.StatusFound)
 }
@@ -1252,7 +1236,7 @@ func postAdminBanned(w http.ResponseWriter, r *http.Request) {
 		deletedUserIDs = append(deletedUserIDs, i)
 	}
 
-	cache.Del(postsKey)
+	getIndexPostsLocked(true)
 
 	http.Redirect(w, r, "/admin/banned", http.StatusFound)
 }
