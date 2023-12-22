@@ -15,6 +15,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/alexedwards/scs/v2"
@@ -176,163 +177,63 @@ func getFlash(w http.ResponseWriter, r *http.Request, key string) string {
 	return sessionManager.PopString(r.Context(), key)
 }
 
-type SimpleComment struct {
-	PostID          int    `db:"post_id"`
-	Comment         string `db:"comment"`
-	UserAccountName string `db:"user_account_name"`
+var (
+	commentM     sync.Mutex
+	commentStore map[int][]Comment = make(map[int][]Comment)
+)
+
+func getCommentsLocked(postID int) []Comment {
+	if cs, ok := commentStore[postID]; ok {
+		return cs
+	}
+
+	var cs []Comment
+
+	query := `
+		SELECT comments.post_id, comments.comment, users.account_name AS "users.account_name"
+		FROM comments
+		JOIN users ON comments.user_id = users.id
+		WHERE post_id = ?
+		ORDER BY comments.created_at
+		`
+
+	err := db.Select(&cs, query, postID)
+	if err != nil {
+		log.Print(err)
+		return cs
+	}
+
+	commentStore[postID] = cs
+	return cs
+}
+
+func getComments(postID int) []Comment {
+	commentM.Lock()
+	defer commentM.Unlock()
+
+	return getCommentsLocked(postID)
+}
+
+func appendComment(c Comment) {
+	commentM.Lock()
+	defer commentM.Unlock()
+
+	cs := getCommentsLocked(c.PostID)
+	commentStore[c.PostID] = append(cs, c)
 }
 
 func makePosts(results []Post, csrfToken string, allComments bool) ([]Post, error) {
 	var posts []Post
 
-	cachedCommentCountKeysMap := make(map[int][]byte, len(results))
-	cachedCommentKeysMap := make(map[int][]byte, len(results))
-
 	for _, p := range results {
-		cachedCommentCountKeysMap[p.ID] = []byte(fmt.Sprintf("comment_count_%d", p.ID))
-		cachedCommentKeysMap[p.ID] = []byte(fmt.Sprintf("comments_%d_%t", p.ID, !allComments))
-	}
+		comments := getComments(p.ID)
+		p.CommentCount = len(comments)
 
-	commentCounts := make(map[int]int, len(results))
-	var missCachedCommentCountPostIDs []int
-	for _, p := range results {
-		key, ok := cachedCommentCountKeysMap[p.ID]
-		if !ok {
-			continue
+		if !allComments && len(comments) > 3 {
+			comments = comments[len(comments)-3:]
 		}
 
-		value, err := cache.Get(key)
-		if err == nil {
-			commentCount, _ := strconv.Atoi(string(value))
-
-			commentCounts[p.ID] = commentCount
-		} else if err == freecache.ErrNotFound {
-			missCachedCommentCountPostIDs = append(missCachedCommentCountPostIDs, p.ID)
-		} else {
-			return nil, err
-		}
-	}
-
-	if len(missCachedCommentCountPostIDs) > 0 {
-		type Count struct {
-			PostID       int `db:"id"`
-			CommentCount int `db:"comment_count"`
-		}
-
-		query := "SELECT id, comment_count FROM posts WHERE id IN (?)"
-		query, args, err := sqlx.In(query, missCachedCommentCountPostIDs)
-		if err != nil {
-			return nil, err
-		}
-
-		query = db.Rebind(query)
-		var counts []Count
-		err = db.Select(&counts, query, args...)
-		if err != nil {
-			return nil, err
-		}
-
-		for _, count := range counts {
-			commentCounts[count.PostID] = count.CommentCount
-
-			err := cache.Set([]byte(cachedCommentCountKeysMap[count.PostID]), []byte(strconv.Itoa(count.CommentCount)), 10)
-			if err != nil {
-				return nil, err
-			}
-		}
-	}
-
-	comments := make(map[int][]SimpleComment, len(results))
-	var missCachedCommentsPostIDs []int
-	for _, p := range results {
-		key, ok := cachedCommentKeysMap[p.ID]
-		if !ok {
-			continue
-		}
-
-		value, err := cache.Get(key)
-		if err == nil {
-			var cs []SimpleComment
-			err := sonnet.Unmarshal(value, &cs)
-			if err != nil {
-				return nil, err
-			}
-
-			comments[p.ID] = cs
-		} else if err == freecache.ErrNotFound {
-			missCachedCommentsPostIDs = append(missCachedCommentsPostIDs, p.ID)
-		} else {
-			return nil, err
-		}
-	}
-
-	if len(missCachedCommentsPostIDs) > 0 {
-		query := `
-		SELECT comments.post_id, comments.comment, users.account_name AS "user_account_name"
-		FROM comments
-		JOIN users ON comments.user_id = users.id
-		WHERE post_id IN (?)
-		ORDER BY comments.created_at DESC
-		`
-
-		query, args, err := sqlx.In(query, missCachedCommentsPostIDs)
-		if err != nil {
-			return nil, err
-		}
-
-		query = db.Rebind(query)
-		var cs []SimpleComment
-		err = db.Select(&cs, query, args...)
-		if err != nil {
-			return nil, err
-		}
-
-		var unsortedComments = make(map[int][]SimpleComment, len(cs))
-		for _, c := range cs {
-			commentsForPost := unsortedComments[c.PostID]
-			if !allComments && len(commentsForPost) >= 3 {
-				continue
-			}
-
-			unsortedComments[c.PostID] = append(unsortedComments[c.PostID], c)
-		}
-
-		for _, postID := range missCachedCommentsPostIDs {
-			c := unsortedComments[postID]
-
-			// reverse comments
-			for i, j := 0, len(c)-1; i < j; i, j = i+1, j-1 {
-				c[i], c[j] = c[j], c[i]
-			}
-
-			comments[postID] = c
-
-			b, err := sonnet.Marshal(c)
-			if err != nil {
-				return nil, err
-			}
-
-			err = cache.Set(cachedCommentKeysMap[postID], b, 10)
-			if err != nil {
-				return nil, err
-			}
-		}
-	}
-
-	for _, p := range results {
-		cs := make([]Comment, 0, len(comments[p.ID]))
-		for _, c := range comments[p.ID] {
-			cs = append(cs, Comment{
-				PostID:  c.PostID,
-				Comment: c.Comment,
-				User: User{
-					AccountName: c.UserAccountName,
-				},
-			})
-		}
-
-		p.CommentCount = commentCounts[p.ID]
-		p.Comments = cs
+		p.Comments = comments
 		p.CSRFToken = csrfToken
 
 		posts = append(posts, p)
@@ -1075,7 +976,7 @@ func postIndex(w http.ResponseWriter, r *http.Request) {
 			mime = "image/gif"
 			ext = "gif"
 		} else {
-		sessionManager.Put(r.Context(), "notice", "投稿できる画像形式はjpgとpngとgifだけです")
+			sessionManager.Put(r.Context(), "notice", "投稿できる画像形式はjpgとpngとgifだけです")
 
 			http.Redirect(w, r, "/", http.StatusFound)
 			return
@@ -1218,9 +1119,14 @@ func postComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cache.Del([]byte(fmt.Sprintf("comment_count_%d", postID)))
-	cache.Del([]byte(fmt.Sprintf("comments_%d_%t", postID, true)))
-	cache.Del([]byte(fmt.Sprintf("comments_%d_%t", postID, false)))
+	appendComment(
+		Comment{
+			PostID:  postID,
+			User:    me,
+			Comment: r.FormValue("comment"),
+		},
+	)
+
 	cache.Del([]byte(fmt.Sprintf("get_posts_id_%d", postID)))
 
 	flag := 0
