@@ -467,6 +467,7 @@ func appendPost(p Post) {
 
 	ps := getIndexPostsLocked(false)
 	postStore = append([]Post{p}, ps...)
+	postStore = postStore[:postsPerPage]
 }
 
 func getIndex(w http.ResponseWriter, r *http.Request) {
