@@ -1001,13 +1001,27 @@ func postIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// isnert into posts and return newly created post
-	query := "INSERT INTO posts (user_id, body, mime, imgdata) VALUES (?,?,?,?) RETURNING posts.id, posts.created_at"
-	row := db.QueryRow(query, me.ID, r.FormValue("body"), mime, filedata)
+	query := "INSERT INTO posts (user_id, mime, imgdata, body) VALUES (?,?,?,?)"
+	result, err := db.Exec(
+		query,
+		me.ID,
+		mime,
+		[]byte(""),
+		r.FormValue("body"),
+	)
+	if err != nil {
+		log.Print(err)
+		return
+	}
 
-	var pid int64
+	pid, err := result.LastInsertId()
+	if err != nil {
+		log.Print(err)
+		return
+	}
+
 	var createdAt time.Time
-	err = row.Scan(&pid, &createdAt)
+	err = db.Get(&createdAt, "SELECT created_at FROM posts WHERE id = ?", pid)
 	if err != nil {
 		log.Print(err)
 		return
