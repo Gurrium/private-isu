@@ -339,13 +339,34 @@ func getLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	template.Must(template.ParseFiles(
-		getTemplPath("layout.html"),
-		getTemplPath("login.html")),
-	).Execute(w, struct {
-		Me    User
-		Flash string
-	}{me, getFlash(w, r)})
+	flash := getFlash(w, r)
+
+	templateLayout(
+		w,
+		me,
+		func(w io.Writer) {
+			templateLogin(w, flash)
+		},
+	)
+}
+
+var templateLoginByteArray = [...][]byte{
+	[]byte(`<div class="header"> <h1>ログイン</h1> </div>`),
+	[]byte(`<div id="notice-message" class="alert alert-danger">`),
+	[]byte(`</div>`),
+	[]byte(`<div class="submit"> <form method="post" action="/login"> <div class="form-account-name"> <span>アカウント名</span> <input type="text" name="account_name"> </div> <div class="form-password"> <span>パスワード</span> <input type="password" name="password"> </div> <div class="form-submit"> <input type="submit" name="submit" value="submit"> </div> </form> </div> <div class="isu-register"> <a href="/register">ユーザー登録</a> </div>`),
+}
+
+func templateLogin(w io.Writer, flash string) {
+	w.Write(templateLoginByteArray[0])
+
+	if len(flash) > 0 {
+		w.Write(templateLoginByteArray[1])
+		w.Write([]byte(flash))
+		w.Write(templateLoginByteArray[2])
+	}
+
+	w.Write(templateLoginByteArray[3])
 }
 
 func postLogin(w http.ResponseWriter, r *http.Request) {
