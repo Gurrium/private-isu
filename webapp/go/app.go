@@ -24,6 +24,7 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/gorilla/sessions"
 	"github.com/jmoiron/sqlx"
+	"github.com/sugawarayuuta/sonnet"
 
 	// profiler
 	_ "net/http/pprof"

@@ -10,6 +10,7 @@ require (
 	github.com/go-sql-driver/mysql v1.7.1
 	github.com/gorilla/sessions v1.2.2
 	github.com/jmoiron/sqlx v1.3.5
+	github.com/sugawarayuuta/sonnet v0.0.0-20231004000330-239c7b6e4ce8
 )
 
 require (
