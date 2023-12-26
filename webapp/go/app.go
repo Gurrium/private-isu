@@ -931,17 +931,17 @@ func getPostsID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// cacheKey := []byte(fmt.Sprintf("get_posts_id_%d", pid))
+	cacheKey := []byte(fmt.Sprintf("get_posts_id_%d", pid))
 	var post Post
 
-	// cached, err := cache.Get(cacheKey)
-	// if err == nil {
-	// 	err := sonnet.Unmarshal(cached, &post)
-	// 	if err != nil {
-	// 		log.Print(err)
-	// 		return
-	// 	}
-	// } else if err == freecache.ErrNotFound {
+	cached, err := cache.Get(cacheKey)
+	if err == nil {
+		err := sonnet.Unmarshal(cached, &post)
+		if err != nil {
+			log.Print(err)
+			return
+		}
+	} else if err == freecache.ErrNotFound {
 		results := []Post{}
 		query := `
 		SELECT posts.id, posts.user_id, posts.body, posts.mime, posts.created_at,
@@ -977,21 +977,21 @@ func getPostsID(w http.ResponseWriter, r *http.Request) {
 
 		post = posts[0]
 
-		// b, err := sonnet.Marshal(post)
-		// if err != nil {
-		// 	log.Print(err)
-		// 	return
-		// }
+		b, err := sonnet.Marshal(post)
+		if err != nil {
+			log.Print(err)
+			return
+		}
 
-		// err = cache.Set(cacheKey, b, 10)
-		// if err != nil {
-		// 	log.Print(err)
-		// 	return
-		// }
-	// } else {
-	// 	log.Print(err)
-	// 	return
-	// }
+		err = cache.Set(cacheKey, b, 10)
+		if err != nil {
+			log.Print(err)
+			return
+		}
+	} else {
+		log.Print(err)
+		return
+	}
 
 	post.CSRFToken = getCSRFToken(r)
 
