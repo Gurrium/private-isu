@@ -839,6 +839,8 @@ func getAccountName(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	time.Sleep(time.Millisecond * 200)
+
 	me := getSessionUser(r)
 
 	templateLayout(
