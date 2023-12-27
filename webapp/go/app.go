@@ -477,7 +477,7 @@ var (
 	postStore []Post = make([]Post, 0, cachedPostsCount+1)
 )
 
-const cachedPostsCount = postsPerPage * 10
+const cachedPostsCount = postsPerPage * 100
 
 func getIndexPostsLocked(forceUpdate bool) []Post {
 	// 初期データの時点でpostsPerPage以上あるのは確定
