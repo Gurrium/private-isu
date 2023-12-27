@@ -926,7 +926,7 @@ func getPosts(w http.ResponseWriter, r *http.Request) {
 
 		results := make([]Post, 0, postsPerPage - len(cachedResults))
 
-		query, args, err := sqlx.In(query, bound.Format(ISO8601Format), deletedUserIDs, len(results))
+		query, args, err := sqlx.In(query, bound.Format(ISO8601Format), deletedUserIDs, cap(results))
 		if err != nil {
 			log.Print(err)
 			return
