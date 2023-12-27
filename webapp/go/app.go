@@ -893,19 +893,19 @@ func getPosts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	results := make([]Post, 0, postsPerPage)
+	cachedResults := make([]Post, 0, postsPerPage)
 	cachedPosts := getIndexPosts()
 	for _, p := range cachedPosts {
 		if p.CreatedAt.Before(t) {
-			results = append(results, p)
+			cachedResults = append(cachedResults, p)
 		}
 
-		if len(results) >= postsPerPage {
+		if len(cachedResults) >= postsPerPage {
 			break
 		}
 	}
 
-	if len(results) < postsPerPage {
+	if len(cachedResults) < postsPerPage {
 		query := `
 		SELECT posts.id, posts.user_id, posts.body, posts.mime, posts.created_at,
 		 users.id AS "users.id", users.account_name AS "users.account_name", users.authority AS "users.authority", users.created_at AS "users.created_at"
@@ -918,13 +918,15 @@ func getPosts(w http.ResponseWriter, r *http.Request) {
 
 		var bound time.Time
 
-		if len(results) == 0 {
+		if len(cachedResults) == 0 {
 			bound = t
 		} else {
-			bound = results[len(results)-1].CreatedAt
+			bound = cachedResults[len(cachedResults)-1].CreatedAt
 		}
 
-		query, args, err := sqlx.In(query, bound.Format(ISO8601Format), deletedUserIDs, postsPerPage - len(results))
+		results := make([]Post, 0, postsPerPage - len(cachedResults))
+
+		query, args, err := sqlx.In(query, bound.Format(ISO8601Format), deletedUserIDs, len(results))
 		if err != nil {
 			log.Print(err)
 			return
@@ -936,9 +938,11 @@ func getPosts(w http.ResponseWriter, r *http.Request) {
 			log.Print(err)
 			return
 		}
+
+		cachedResults = append(cachedResults, results...)
 	}
 
-	posts, err := makePosts(results, getCSRFToken(r), false)
+	posts, err := makePosts(cachedResults, getCSRFToken(r), false)
 	if err != nil {
 		log.Print(err)
 		return
