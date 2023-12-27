@@ -474,16 +474,18 @@ func getLogout(w http.ResponseWriter, r *http.Request) {
 
 var (
 	postM     sync.Mutex
-	postStore []Post = make([]Post, 0, postsPerPage+1)
+	postStore []Post = make([]Post, 0, cachedPostsCount+1)
 )
+
+const cachedPostsCount = postsPerPage * 4
 
 func getIndexPostsLocked(forceUpdate bool) []Post {
 	// 初期データの時点でpostsPerPage以上あるのは確定
-	if len(postStore) >= postsPerPage && !forceUpdate {
+	if len(postStore) >= cachedPostsCount && !forceUpdate {
 		return postStore
 	}
 
-	ps := make([]Post, 0, postsPerPage)
+	ps := make([]Post, 0, cachedPostsCount)
 
 	query := `
 		SELECT posts.id, posts.body, posts.mime, posts.created_at,
@@ -495,7 +497,7 @@ func getIndexPostsLocked(forceUpdate bool) []Post {
 		LIMIT ?
 		`
 
-	query, args, err := sqlx.In(query, deletedUserIDs, postsPerPage)
+	query, args, err := sqlx.In(query, deletedUserIDs, cachedPostsCount)
 	if err != nil {
 		log.Print(err)
 		return []Post{}
@@ -531,7 +533,7 @@ func appendPost(p Post) {
 
 	ps := getIndexPostsLocked(false)
 	postStore = append([]Post{p}, ps...)
-	postStore = postStore[:postsPerPage]
+	postStore = postStore[:cachedPostsCount]
 }
 
 func getIndex(w http.ResponseWriter, r *http.Request) {
@@ -540,10 +542,14 @@ func getIndex(w http.ResponseWriter, r *http.Request) {
 	results := getIndexPosts()
 
 	csrfToken := getCSRFToken(r)
-	posts := make([]Post, 0, 20)
+	posts := make([]Post, 0, postsPerPage)
 	for _, p := range results {
 		p.CSRFToken = csrfToken
 		posts = append(posts, p)
+
+		if len(posts) >= postsPerPage {
+			break
+		}
 	}
 
 	flash := getFlash(w, r)
@@ -887,8 +893,20 @@ func getPosts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	results := []Post{}
-	query := `
+	results := make([]Post, 0, postsPerPage)
+	cachedPosts := getIndexPosts()
+	for _, p := range cachedPosts {
+		if p.CreatedAt.Before(t) {
+			results = append(results, p)
+		}
+
+		if len(results) >= postsPerPage {
+			break
+		}
+	}
+
+	if len(results) < postsPerPage {
+		query := `
 		SELECT posts.id, posts.user_id, posts.body, posts.mime, posts.created_at,
 		 users.id AS "users.id", users.account_name AS "users.account_name", users.authority AS "users.authority", users.created_at AS "users.created_at"
 		FROM posts
@@ -898,17 +916,26 @@ func getPosts(w http.ResponseWriter, r *http.Request) {
 		LIMIT ?
 		`
 
-	query, args, err := sqlx.In(query, t.Format(ISO8601Format), deletedUserIDs, postsPerPage)
-	if err != nil {
-		log.Print(err)
-		return
-	}
+		var bound time.Time
 
-	query = db.Rebind(query)
-	err = db.Select(&results, query, args...)
-	if err != nil {
-		log.Print(err)
-		return
+		if len(results) == 0 {
+			bound = t
+		} else {
+			bound = results[len(results)-1].CreatedAt
+		}
+
+		query, args, err := sqlx.In(query, bound.Format(ISO8601Format), deletedUserIDs, postsPerPage - len(results))
+		if err != nil {
+			log.Print(err)
+			return
+		}
+
+		query = db.Rebind(query)
+		err = db.Select(&results, query, args...)
+		if err != nil {
+			log.Print(err)
+			return
+		}
 	}
 
 	posts, err := makePosts(results, getCSRFToken(r), false)
