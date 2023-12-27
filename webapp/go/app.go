@@ -896,9 +896,9 @@ func getPosts(w http.ResponseWriter, r *http.Request) {
 	cachedResults := make([]Post, 0, postsPerPage)
 	cachedPosts := getIndexPosts()
 	for _, p := range cachedPosts {
-		if p.CreatedAt.Before(t) {
+		if p.CreatedAt.Compare(t) <= 0 {
 			cachedResults = append(cachedResults, p)
-		}
+		}	
 
 		if len(cachedResults) >= postsPerPage {
 			break
