@@ -300,7 +300,7 @@ func appendComment(c Comment) {
 }
 
 func makePosts(results []Post, csrfToken string, allComments bool) ([]Post, error) {
-	var posts []Post
+	posts := make([]Post, 0, len(results))
 
 	for _, p := range results {
 		comments := getComments(p.ID)
