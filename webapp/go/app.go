@@ -522,6 +522,8 @@ func getIndexPostsLocked(forceUpdate bool, skipQuery bool) []Post {
 	ps := make([]Post, 0, cachedPostsCount)
 
 	if skipQuery {
+		ps = postStore
+	} else {
 		query := `
 		SELECT posts.id, posts.body, posts.mime, posts.created_at,
 		users.account_name AS "users.account_name", users.authority AS "users.authority"
@@ -544,8 +546,6 @@ func getIndexPostsLocked(forceUpdate bool, skipQuery bool) []Post {
 			log.Print(err)
 			return []Post{}
 		}
-	} else {
-		ps = postStore
 	}
 
 	results, err := makePosts(ps, "", false)
