@@ -404,6 +404,8 @@ func postLogin(w http.ResponseWriter, r *http.Request) {
 
 	u := tryLogin(r.FormValue("account_name"), r.FormValue("password"))
 
+	time.Sleep(time.Millisecond * 200)
+
 	if u != nil {
 		session := Session{
 			UserID:      u.ID,
