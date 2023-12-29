@@ -289,6 +289,7 @@ func getComments(postID int) []Comment {
 
 func appendComment(c Comment) {
 	commentM.Lock()
+	defer commentM.Unlock()
 
 	cs := getCommentsLocked(c.PostID)
 	c.Rendered = RenderedComment{
@@ -296,14 +297,6 @@ func appendComment(c Comment) {
 		Comment:         []byte(c.Comment),
 	}
 	commentStore[c.PostID] = append(cs, c)
-
-	commentM.Unlock()
-
-	postM.Lock()
-
-	getIndexPostsLocked(true, true)
-
-	postM.Unlock()
 }
 
 func makePosts(results []Post, csrfToken string, allComments bool) ([]Post, error) {
@@ -513,7 +506,7 @@ var (
 
 const cachedPostsCount = postsPerPage * 100
 
-func getIndexPostsLocked(forceUpdate bool, skipQuery bool) []Post {
+func getIndexPostsLocked(forceUpdate bool) []Post {
 	// 初期データの時点でpostsPerPage以上あるのは確定
 	if len(postStore) >= cachedPostsCount && !forceUpdate {
 		return postStore
@@ -521,8 +514,7 @@ func getIndexPostsLocked(forceUpdate bool, skipQuery bool) []Post {
 
 	ps := make([]Post, 0, cachedPostsCount)
 
-	if skipQuery {
-		query := `
+	query := `
 		SELECT posts.id, posts.body, posts.mime, posts.created_at,
 		users.account_name AS "users.account_name", users.authority AS "users.authority"
 		FROM posts
@@ -532,20 +524,17 @@ func getIndexPostsLocked(forceUpdate bool, skipQuery bool) []Post {
 		LIMIT ?
 		`
 
-		query, args, err := sqlx.In(query, deletedUserIDs, cachedPostsCount)
-		if err != nil {
-			log.Print(err)
-			return []Post{}
-		}
+	query, args, err := sqlx.In(query, deletedUserIDs, cachedPostsCount)
+	if err != nil {
+		log.Print(err)
+		return []Post{}
+	}
 
-		query = db.Rebind(query)
-		err = db.Select(&ps, query, args...)
-		if err != nil {
-			log.Print(err)
-			return []Post{}
-		}
-	} else {
-		ps = postStore
+	query = db.Rebind(query)
+	err = db.Select(&ps, query, args...)
+	if err != nil {
+		log.Print(err)
+		return []Post{}
 	}
 
 	results, err := makePosts(ps, "", false)
@@ -573,14 +562,14 @@ func getIndexPosts() []Post {
 	postM.Lock()
 	defer postM.Unlock()
 
-	return getIndexPostsLocked(false, false)
+	return getIndexPostsLocked(false)
 }
 
 func appendPost(p Post) {
 	postM.Lock()
 	defer postM.Unlock()
 
-	ps := getIndexPostsLocked(false, false)
+	ps := getIndexPostsLocked(false)
 	p.Rendered = RenderedPost{
 		ID:              []byte(strconv.Itoa(p.ID)),
 		CreatedAt:       []byte(p.CreatedAt.Format(ISO8601Format)),
@@ -1402,6 +1391,8 @@ func postComment(w http.ResponseWriter, r *http.Request) {
 
 	cache.Del([]byte(fmt.Sprintf("get_posts_id_%d", postID)))
 
+	getIndexPostsLocked(true)
+
 	http.Redirect(w, r, fmt.Sprintf("/posts/%d", postID), http.StatusFound)
 }
 
@@ -1502,7 +1493,7 @@ func postAdminBanned(w http.ResponseWriter, r *http.Request) {
 		deletedUserIDs = append(deletedUserIDs, i)
 	}
 
-	getIndexPostsLocked(true, false)
+	getIndexPostsLocked(true)
 
 	http.Redirect(w, r, "/admin/banned", http.StatusFound)
 }
