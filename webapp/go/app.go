@@ -13,7 +13,7 @@ import (
 	"os"
 	"path"
 	"regexp"
-	"runtime"
+	// "runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -1511,11 +1511,11 @@ func postAdminBanned(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	// profiler
-	runtime.SetBlockProfileRate(1)
-	runtime.SetMutexProfileFraction(1)
-	go func() {
-		log.Fatal(http.ListenAndServe(":6060", nil))
-	}()
+	// runtime.SetBlockProfileRate(1)
+	// runtime.SetMutexProfileFraction(1)
+	// go func() {
+	// 	log.Fatal(http.ListenAndServe(":6060", nil))
+	// }()
 
 	host := os.Getenv("ISUCONP_DB_HOST")
 	if host == "" {
